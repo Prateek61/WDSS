@@ -1,0 +1,15 @@
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+
+# Jupyter Notebook
+
+# Test
+testing_code.ipynb
+testing_code.py
+
+# Log files
+*.log
+logs/
