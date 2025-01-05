@@ -13,3 +13,6 @@ testing_code.py
 # Log files
 *.log
 logs/
+
+# Dataset
+data/
