@@ -2,3 +2,7 @@ numpy
 opencv-python
 matplotlib
 scikit-image
+lpips
+torchmetrics
+ptwt
+PyWavelets
