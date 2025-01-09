@@ -104,7 +104,7 @@ class ImageUtils:
         if tensor.dim() == 4:
             tensor = tensor.squeeze(0)
         # Convert the tensor to an OpenCV image
-        image = tensor.permute(1, 2, 0).numpy().astype(np.uint8)
+        image = tensor.permute(1, 2, 0).numpy()
         return image
 
 
@@ -121,6 +121,7 @@ class ImageUtils:
 
         # Load the image using OpenCV
         image = cv2.imread(image_path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         return image
 
 
@@ -132,6 +133,10 @@ class ImageUtils:
         # Check if the input is a tensor
         if isinstance(image, torch.Tensor):
             image = ImageUtils.tensor_to_image(image)
+        # Check if the input is numpy array
+        if isinstance(image, np.ndarray):
+            # Normalize the image
+            image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
         # Display the image
         plt.imshow(image)
@@ -147,7 +152,12 @@ class ImageUtils:
 
         # Check if the input is a tensor
         if isinstance(images[0], torch.Tensor):
-            images = [ImageUtils.tensor_to_image(image) for image in images]
+            # Convert to numpy images
+            images = [ImageUtils.tensor_to_opencv_image(image) for image in images]
+        # Check if the input is numpy array
+        if isinstance(images[0], np.ndarray):
+            # Normalize the images
+            images = [cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8) for image in images]
 
         # Display the images
         fig, axes = plt.subplots(1, len(images), figsize=(20, 10))
