@@ -13,11 +13,14 @@ class ActivationFn(Enum):
     LRELU = torch.nn.LeakyReLU(0.2)
 
 def pad_tensor(t: torch.Tensor, pattern: torch.Tensor) -> torch.Tensor:
-    """
-    Pad a tensor with zeros according to a pattern.
-    :param t: tensor to pad
-    :param pattern: pattern to follow
-    :return: padded tensor
+    """Returns a padded tensor with the given pattern.
+
+    Args:
+        t (torch.Tensor): Input tensor.
+        pattern (torch.Tensor): Pattern tensor.
+
+    Returns:
+        torch.Tensor: Padded tensor.
     """
     
     pattern = pattern.view(1, -1, 1, 1)
@@ -30,10 +33,13 @@ def pad_tensor(t: torch.Tensor, pattern: torch.Tensor) -> torch.Tensor:
     return t
 
 def get_activation_fn(activation_fn: ActivationFn) -> torch.nn.Module:
-    """
-    Get the activation function module.
-    :param activation_fn: activation function to get
-    :return: activation function module
+    """Returns the activation function assotiated with the given enum.
+
+    Args:
+        activation_fn (ActivationFn): Activation function enum.
+
+    Returns:
+        torch.nn.Module: Activation function.
     """
     
     return activation_fn.value
