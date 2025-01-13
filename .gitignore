@@ -17,4 +17,10 @@ logs/
 # Dataset
 data/
 
+# Temporary files
+temp/
+
+# Model directory
+/model/
+
 .conda

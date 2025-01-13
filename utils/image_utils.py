@@ -124,6 +124,12 @@ class ImageUtils:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         return image
 
+    @staticmethod
+    def decode_exr_image_opencv(file_buffer: bytes) -> np.ndarray:
+        # Decode the EXR image using OpenCV
+        image = cv2.imdecode(np.frombuffer(file_buffer, np.uint8), cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        return image
 
     @staticmethod
     def display_image(image: Image.Image | torch.Tensor | np.ndarray, title: str = "") -> None:
@@ -150,20 +156,19 @@ class ImageUtils:
         """Display a list of images using matplotlib.
         """
 
-        # Check if the input is a tensor
-        if isinstance(images[0], torch.Tensor):
-            # Convert to numpy images
-            images = [ImageUtils.tensor_to_opencv_image(image) for image in images]
-        # Check if the input is numpy array
-        if isinstance(images[0], np.ndarray):
-            # Normalize the images
-            images = [cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8) for image in images]
-
         # Display the images
         fig, axes = plt.subplots(1, len(images), figsize=(20, 10))
         if titles is None:
             titles = [f"Image {i+1}" for i in range(len(images))]
         for i, (image, title) in enumerate(zip(images, titles)):
+            # Check if the input a tensor
+            if isinstance(image, torch.Tensor):
+                image = ImageUtils.tensor_to_opencv_image(image)
+            # Check if the input is numpy array
+            if isinstance(image, np.ndarray):
+                # Normalize the image
+                image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
             axes[i].imshow(image)
             axes[i].set_title(title)
             axes[i].axis('off')

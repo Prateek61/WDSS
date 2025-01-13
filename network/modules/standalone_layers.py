@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from network.commons import pad_tensor
 
+
 class ResBlock(nn.Module):
     """ Residual in residual reparameterizable block.
     Using reparameterizable block to replace single 3x3 convolution.
@@ -35,3 +36,17 @@ class ResBlock(nn.Module):
         out += x
 
         return out
+    
+
+class LightWeightGatedConv2D(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int, padding: int):
+        super(LightWeightGatedConv2D, self).__init__()
+
+        self.feature = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
+        self.gate = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=kernel_size, stride=stride, padding=padding),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.feature(x) * self.gate(x)
