@@ -6,3 +6,4 @@ lpips
 torchmetrics
 ptwt
 PyWavelets
+ptwt
