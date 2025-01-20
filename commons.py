@@ -1,5 +1,8 @@
 import config
 import logging
+import torch
+
+from typing import TypeVar, Tuple
 
 def initialize(settings: config.Settings = config.Settings()):
     initialize_system_log(settings.system_log_file)
@@ -20,3 +23,4 @@ def initialize_system_log(log_file: str = "") -> None:
         logging.getLogger('').addHandler(file_handler)
 
     logging.info("System Logger initialized")
+    

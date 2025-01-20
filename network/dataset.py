@@ -1,9 +1,14 @@
 import os
+
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
+
 from torch.utils.data import Dataset
 from enum import Enum
 from utils.image_utils import ImageUtils
 import torch
 import zipfile
+from random import randint
+
 from typing import Dict, List
 
 class GBufferType(Enum):
@@ -94,10 +99,12 @@ class WDSSDatasetCompressed(Dataset):
         'LR_GB_FOLDER': 'Low_Res_G'
     }
 
-    def __init__(self, root_dir: str, frames_per_zip: int):
+    def __init__(self, root_dir: str, frames_per_zip: int, patch_size: int | None = None, upscale_factor: int = 2):
         self.root_dir = root_dir
         self.frames_per_zip = frames_per_zip
         self.compressed_files = os.listdir(root_dir)
+        self.patch_size = patch_size
+        self.upscale_factor = upscale_factor
 
         self.total_frames = len(self.compressed_files) * frames_per_zip
 
@@ -125,10 +132,26 @@ class WDSSDatasetCompressed(Dataset):
                 frame = ImageUtils.decode_exr_image_opencv(buffer)
                 frames.append(torch.from_numpy(frame).permute(2, 0, 1))
 
+        
+
+        if self.patch_size is not None:
+            # Get the patch position,
+            # which is a random crop from the frame
+            _, lr_h, lr_w = frames[1].shape
+            patch_y = randint(0, lr_h - self.patch_size)
+            patch_x = randint(0, lr_w - self.patch_size)
+            hr_patch = frames[0][:, patch_y*self.upscale_factor:patch_y*self.upscale_factor + self.patch_size*self.upscale_factor, patch_x*self.upscale_factor:patch_x*self.upscale_factor + self.patch_size*self.upscale_factor]
+            lr_patch = frames[1][:, patch_y:patch_y + self.patch_size, patch_x:patch_x + self.patch_size]
+            gb_patch = torch.cat(frames[2:], dim=0)[:, patch_y*self.upscale_factor:patch_y*self.upscale_factor + self.patch_size*self.upscale_factor, patch_x*self.upscale_factor:patch_x*self.upscale_factor + self.patch_size*self.upscale_factor]
+        else:
+            hr_patch = frames[0]
+            lr_patch = frames[1]
+            gb_patch = torch.cat(frames[2:], dim=0)
+
         return {
-            'HR': frames[0],
-            'LR': frames[1],
-            'GB': torch.cat(frames[2:], dim=0)
+            'HR': hr_patch,
+            'LR': lr_patch,
+            'GB': gb_patch
         }
 
     def _get_hr_frame_path(self, frame_idx: int) -> str:

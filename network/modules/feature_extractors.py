@@ -29,7 +29,7 @@ class LRFrameFeatureExtractor(nn.Module):
 
 
 class HRGBufferFeatureExtractor(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, layers: List[int] = [64, 64, 64, 64]):
+    def __init__(self, in_channels: int, out_channels: int, layers: List[int] = [64, 64, 64, 64, 64]):
         """High resolution frame feature extractor.
             using conv layers to extract features from high resolution frames.
         Args:
