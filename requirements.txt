@@ -4,6 +4,8 @@ matplotlib
 scikit-image
 lpips
 torchmetrics
+# Wavelets
 ptwt
 PyWavelets
 ptwt
+tqdm # for progress bars
