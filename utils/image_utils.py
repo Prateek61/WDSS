@@ -147,7 +147,7 @@ class ImageUtils:
         if isinstance(image, np.ndarray):
             # Normalize the image
             if normalize:
-                image = cv2.normalize(image, None, 0, 1, cv2.NORM_MINMAX).astype(np.float32)
+                image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             else:
                 # Clip the pixel values to [0, 1]
                 image = np.clip(image, 0, 1)
@@ -188,7 +188,7 @@ class ImageUtils:
             if isinstance(image, np.ndarray):
                 # Normalize the image
                 if normalize:
-                    image = cv2.normalize(image, None, 0, 1, cv2.NORM_MINMAX).astype(np.float32)
+                    image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
                 else:
                     # Clip the pixel values to [0, 1]
                     image = np.clip(image, 0, 1)

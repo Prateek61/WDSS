@@ -1,8 +1,26 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from network.commons import pad_tensor
 
+def pad_tensor(t: torch.Tensor, pattern: torch.Tensor) -> torch.Tensor:
+    """Returns a padded tensor with the given pattern.
+
+    Args:
+        t (torch.Tensor): Input tensor.
+        pattern (torch.Tensor): Pattern tensor.
+
+    Returns:
+        torch.Tensor: Padded tensor.
+    """
+    
+    pattern = pattern.view(1, -1, 1, 1)
+    t = F.pad(t, (1, 1, 1, 1), 'constant', 0)
+    t[:, :, 0:1, :] = pattern
+    t[:, :, -1:, :] = pattern
+    t[:, :, :, 0:1] = pattern
+    t[:, :, :, -1:] = pattern
+
+    return t
 
 class ResBlock(nn.Module):
     """ Residual in residual reparameterizable block.
@@ -28,8 +46,8 @@ class ResBlock(nn.Module):
         out_identify: torch.Tensor = out
 
         # explicitly padding with bias for reparameterizing in the test phase
-        b0: torch.Tensor = self.expand_conv.bias
-        out = pad_tensor(out, b0)
+        # b0: torch.Tensor = self.expand_conv.bias
+        # out = pad_tensor(out, b0)
 
         out = self.fea_conv(out) + out_identify
         out = self.reduce_conv(out)
