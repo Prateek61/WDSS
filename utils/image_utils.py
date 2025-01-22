@@ -103,6 +103,8 @@ class ImageUtils:
         # If yes, remove the batch dimension
         if tensor.dim() == 4:
             tensor = tensor.squeeze(0)
+        elif tensor.dim() == 2:
+            tensor = tensor.unsqueeze(0)
         # Convert the tensor to an OpenCV image
         image = tensor.permute(1, 2, 0).numpy()
         return image
@@ -132,44 +134,77 @@ class ImageUtils:
         return image
 
     @staticmethod
-    def display_image(image: Image.Image | torch.Tensor | np.ndarray, title: str = "") -> None:
+    def display_image(image: Image.Image | torch.Tensor | np.ndarray, title: str = "", normalize: bool = True) -> None:
         """Display an image using matplotlib.
         """
 
         # Check if the input is a tensor
         if isinstance(image, torch.Tensor):
-            image = ImageUtils.tensor_to_image(image)
+            image = ImageUtils.tensor_to_opencv_image(image)
+        # Number of channels in the image
+        channels = 3
         # Check if the input is numpy array
         if isinstance(image, np.ndarray):
             # Normalize the image
-            image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            if normalize:
+                image = cv2.normalize(image, None, 0, 1, cv2.NORM_MINMAX).astype(np.float32)
+            else:
+                # Clip the pixel values to [0, 1]
+                image = np.clip(image, 0, 1)
+            try:
+                channels = image.shape[2]
+            except:
+                channels = 1
 
         # Display the image
-        plt.imshow(image)
+        if channels == 1: # If single channel, display in grayscale
+            plt.imshow(image, cmap='gray')
+        else: # Else display in color
+            if channels == 2:
+                # Add an extra B channel with zeros
+                image = cv2.merge((image, np.zeros_like(image[:,:,0])))
+            plt.imshow(image)
+
         plt.title(title)
         plt.axis('off')
         plt.show()
 
 
     @staticmethod
-    def display_images(images: List[torch.Tensor | Image.Image | np.ndarray], titles: List[str] = None) -> None:
+    def display_images(images: List[torch.Tensor | Image.Image | np.ndarray], titles: List[str] = [], normalize: bool = True) -> None:
         """Display a list of images using matplotlib.
         """
 
         # Display the images
         fig, axes = plt.subplots(1, len(images), figsize=(20, 10))
-        if titles is None:
+        if not titles:
             titles = [f"Image {i+1}" for i in range(len(images))]
         for i, (image, title) in enumerate(zip(images, titles)):
+            channels = 3
             # Check if the input a tensor
             if isinstance(image, torch.Tensor):
                 image = ImageUtils.tensor_to_opencv_image(image)
             # Check if the input is numpy array
             if isinstance(image, np.ndarray):
                 # Normalize the image
-                image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                if normalize:
+                    image = cv2.normalize(image, None, 0, 1, cv2.NORM_MINMAX).astype(np.float32)
+                else:
+                    # Clip the pixel values to [0, 1]
+                    image = np.clip(image, 0, 1)
+                try:
+                    channels = image.shape[2]
+                except:
+                    channels = 1
 
-            axes[i].imshow(image)
+            if channels == 1:
+                axes[i].imshow(image, cmap='gray')
+            else:
+                if channels == 2:
+                    # Add an extra B channel with zeros
+                    image = cv2.merge((image, np.zeros_like(image[:,:,0])))
+                axes[i].imshow(image)
+
             axes[i].set_title(title)
             axes[i].axis('off')
         plt.show()
