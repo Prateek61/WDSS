@@ -8,6 +8,9 @@ from utils.image_utils import ImageUtils
 import torch
 import zipfile
 from random import randint
+import cv2
+import numpy as np
+from utils.wavelet import WaveletProcessor
 
 from typing import Dict, List, Tuple
     
@@ -46,8 +49,6 @@ class FrameGroup(Enum):
     LR = 'LR'
     GB = 'GB'
     TEMPORAL = 'TEMPORAL'
-    HR_WAVELET = 'HR_WAVELET'
-    LR_WAVELET = 'LR_WAVELET'
 
 class WDSSDatasetCompressed(Dataset):
     FRAME_PATHS = {
@@ -201,8 +202,17 @@ class WDSSDatasetCompressed(Dataset):
         lr_h, lr_w = LowResolution
         patch_h, patch_w = PatchSize, PatchSize
 
-        patch_y = randint(0, lr_h - patch_h)
-        patch_x = randint(0, lr_w - patch_w)
+        # Number of patches in the image
+        num_patches_h = (lr_h // patch_h) + 1
+        num_patches_w = (lr_w // patch_w) + 1
+
+        # Randomly select a patch
+        patch_idx_y = randint(0, num_patches_h - 1)
+        patch_idx_x = randint(0, num_patches_w - 1)
+
+        # Get the patch window
+        patch_y = min(patch_idx_y * (lr_h // num_patches_h), lr_h - patch_h)
+        patch_x = min(patch_idx_x * (lr_w // num_patches_w), lr_w - patch_w) 
 
         hr_patch_y_tl = patch_y * UpscaleFactor
         hr_patch_x_tl = patch_x * UpscaleFactor

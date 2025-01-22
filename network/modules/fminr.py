@@ -107,6 +107,7 @@ class FourierMappedINR(nn.Module):
         """Create the MLP network with SIREN activation."""
         layers = []
         inp_channels = self.mlp_inp_channels
+        layers.append(SineActivation(omega_0=omega_0))  # Use SIREN activation with omega_0 scaling
         for hidden_channel in self.hidden_channels:
             layers.append(nn.Conv2d(inp_channels, hidden_channel, kernel_size=1))
             layers.append(SineActivation(omega_0=omega_0))  # Use SIREN activation with omega_0 scaling
