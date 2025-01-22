@@ -41,6 +41,7 @@ class RawFrameGroup(Enum):
     HR_GB = 'HighResGBuffer'
     LR_GB = 'LowResGBuffer'
     TEMPORAL = 'Temporal'
+    TEMPORAL_GB = 'TemporalGBuffer'
 
 class FrameGroup(Enum):
     """Pre Processed Frame Groups for the model.
@@ -49,6 +50,7 @@ class FrameGroup(Enum):
     LR = 'LR'
     GB = 'GB'
     TEMPORAL = 'TEMPORAL'
+    TEMPORAL_GB = 'TEMPORAL_GB'
 
 class WDSSDatasetCompressed(Dataset):
     FRAME_PATHS = {
@@ -82,8 +84,17 @@ class WDSSDatasetCompressed(Dataset):
         gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL]], dim=0)
         gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC]], dim=0)
         gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.ROUGHNESS]], dim=0)
+        
+        temporal_gb: torch.Tensor = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.BASE_COLOR]
+        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NoV]], dim=0)
+        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DEPTH]], dim=0)
+        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NORMAL]], dim=0)
+        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC]], dim=0)
+        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.ROUGHNESS]], dim=0)
 
         res[FrameGroup.GB.value] = gb
+        res[FrameGroup.TEMPORAL_GB.value] = temporal_gb
+        
 
         return res
 
@@ -106,6 +117,7 @@ class WDSSDatasetCompressed(Dataset):
             res[RawFrameGroup.HR_GB] = self._get_hr_g_buffers(frame_idx, zip_ref, base_folder)
             res[RawFrameGroup.LR_GB] = self._get_lr_g_buffers(frame_idx, zip_ref, base_folder)
             res[RawFrameGroup.TEMPORAL] = self._get_hr_frame(frame_idx - 1, zip_ref, base_folder)
+            res[RawFrameGroup.TEMPORAL_GB] = self._get_hr_g_buffers(frame_idx - 1, zip_ref, base_folder)
 
         if self.patch_size and not no_patch:
             # Get the patch position
@@ -118,6 +130,7 @@ class WDSSDatasetCompressed(Dataset):
             for gb_type in GB_Type:
                 res[RawFrameGroup.HR_GB][gb_type] = res[RawFrameGroup.HR_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
                 res[RawFrameGroup.LR_GB][gb_type] = res[RawFrameGroup.LR_GB][gb_type][:, lr_window[0][0]:lr_window[1][0], lr_window[0][1]:lr_window[1][1]]
+                res[RawFrameGroup.TEMPORAL_GB][gb_type] = res[RawFrameGroup.TEMPORAL_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
 
         return res
 
