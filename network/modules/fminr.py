@@ -32,7 +32,7 @@ class FourierMappedINR(nn.Module):
         self.freq_conv = nn.Conv2d(gb_feat_c, mlp_inp_channels, kernel_size=3, padding=1)
         self.phase_conv = nn.Conv2d(1, mlp_inp_channels//2, kernel_size=1, bias=False)
 
-        self.mlp = self._make_mlp()
+        self.mlp = self._make_siren_mlp(omega_0=30.0)
     
     def forward(self, lr_feat: torch.Tensor, gb_feat: torch.Tensor, upscale_factor: float = 2.0) -> torch.Tensor:
         """Forward pass of the Fourier mapped INR module.
@@ -84,7 +84,7 @@ class FourierMappedINR(nn.Module):
         hr_freq += hr_phase
         hr_freq = torch.cat((torch.cos(np.pi * hr_freq), torch.sin(np.pi * hr_freq)), dim=1)
         mlp_inp = upsampled_amplitude * hr_freq
-
+        
         # Compute the output
         out = self.mlp(mlp_inp)
         return out
@@ -102,3 +102,24 @@ class FourierMappedINR(nn.Module):
             inp_channels = hidden_channel
         layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))
         return nn.Sequential(*layers)
+    
+    def _make_siren_mlp(self , omega_0) -> nn.Sequential:
+        """Create the MLP network with SIREN activation."""
+        layers = []
+        inp_channels = self.mlp_inp_channels
+        for hidden_channel in self.hidden_channels:
+            layers.append(nn.Conv2d(inp_channels, hidden_channel, kernel_size=1))
+            layers.append(SineActivation(omega_0=omega_0))  # Use SIREN activation with omega_0 scaling
+            inp_channels = hidden_channel
+        layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))  # No activation on output layer
+        return nn.Sequential(*layers)
+
+class SineActivation(nn.Module):
+    """Sine activation layer for SIREN with omega_0 scaling."""
+    def __init__(self, omega_0: float = 30.0):
+        super(SineActivation, self).__init__()
+        self.omega_0 = omega_0  # Store omega_0 as an attribute
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Apply omega_0 scaling to the sine activation
+        return torch.sin(self.omega_0 * x)

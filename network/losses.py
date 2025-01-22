@@ -112,47 +112,27 @@ class WaveletCriterion(nn.Module):
                 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         losses: Dict[str, torch.Tensor] = {}
 
-        # First compute all the losses for prediction and target image
-        l1_loss = torch.mean(self.l1(prediction_image, target_image))
+        # Weights for different losses
+        weights = {
+            'l1': 1.0,       # L1 loss has the highest weight
+            'ssim': 0.2,     # SSIM loss contributes moderately
+            'lpips': 0.1,    # LPIPS loss has the smallest weight
+        }
+
+        # L1 loss for the wavelet coefficients
+
+        l1_loss = torch.mean(torch.abs(prediction_wavelet - target_wavelet))
         ssim_loss = torch.mean(1 - self.ssim(prediction_image, target_image))
         lpips_loss = torch.mean(self.lpips(prediction_image, target_image))
+        
+        total_loss = weights['l1'] * l1_loss + weights['ssim'] * ssim_loss + weights['lpips'] * lpips_loss
+        
+        losses['l1'] = l1_loss
+        losses['ssim'] = ssim_loss
+        losses['lpips'] = lpips_loss
+        
+        
 
-        # Compute the L1 loss for the wavelet coefficients
-        l1_loss_app = torch.mean(self.l1(prediction_wavelet[:, 0:3, :, :], target_wavelet[:, 0:3, :, :]))
-        l1_loss_hor = torch.mean(self.l1(prediction_wavelet[:, 3:6, :, :], target_wavelet[:, 3:6, :, :]))
-        l1_loss_ver = torch.mean(self.l1(prediction_wavelet[:, 6:9, :, :], target_wavelet[:, 6:9, :, :]))
-        l1_loss_diag = torch.mean(self.l1(prediction_wavelet[:, 9:12, :, :], target_wavelet[:, 9:12, :, :]))
-
-        # Compute the SSIM loss for the wavelet coefficients
-        ssim_loss_app = torch.mean(1 - self.ssim(prediction_wavelet[:, 0:3, :, :], target_wavelet[:, 0:3, :, :]))
-        ssim_loss_hor = torch.mean(1 - self.ssim(prediction_wavelet[:, 3:6, :, :], target_wavelet[:, 3:6, :, :]))
-        ssim_loss_ver = torch.mean(1 - self.ssim(prediction_wavelet[:, 6:9, :, :], target_wavelet[:, 6:9, :, :]))
-        ssim_loss_diag = torch.mean(1 - self.ssim(prediction_wavelet[:, 9:12, :, :], target_wavelet[:, 9:12, :, :]))
-
-        # Compute the LPIPS loss for the wavelet coefficients
-        lpips_loss_app = torch.mean(self.lpips(prediction_wavelet[:, 0:3, :, :], target_wavelet[:, 0:3, :, :]))
-
-        # Compute the total loss
-        total_loss = l1_loss + 0.2 * ssim_loss + 0.1 * lpips_loss
-        total_loss += (l1_loss_app + l1_loss_hor + l1_loss_ver + l1_loss_diag) / 4
-        total_loss += 0.2 * (ssim_loss_app + ssim_loss_hor + ssim_loss_ver + ssim_loss_diag) / 4
-        total_loss += 0.05 * lpips_loss_app
-
-        # Add all the losses to the dictionary
-        losses['l1_loss'] = l1_loss
-        losses['ssim_loss'] = ssim_loss
-        losses['lpips_loss'] = lpips_loss
-        losses['l1_loss_app'] = l1_loss_app
-        losses['l1_loss_hor'] = l1_loss_hor
-        losses['l1_loss_ver'] = l1_loss_ver
-        losses['l1_loss_diag'] = l1_loss_diag
-        losses['ssim_loss_app'] = ssim_loss_app
-        losses['ssim_loss_hor'] = ssim_loss_hor
-        losses['ssim_loss_ver'] = ssim_loss_ver
-        losses['ssim_loss_diag'] = ssim_loss_diag
-        losses['lpips_loss_app'] = lpips_loss_app
-        losses['total_loss'] = total_loss
-
+        # Return total loss and individual losses
         return total_loss, losses
 
-        

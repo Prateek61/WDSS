@@ -68,7 +68,7 @@ class WaveletProcessor:
             channels.append(channel)
 
         reconstructed = torch.stack(channels, dim=0)
-        return reconstructed.clamp(0, 255).float()
+        return reconstructed.float()
 
     @staticmethod
     def batch_wt(image_batch, wavelet='haar', level = 1):
