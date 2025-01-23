@@ -1,26 +1,19 @@
-import config
-import logging
-import torch
+import os
+
+from config import Settings, device
 
 from typing import TypeVar, Tuple
 
-def initialize(settings: config.Settings = config.Settings()):
-    initialize_system_log(settings.system_log_file)
-    logging.info(f"Device: {config.device}")
+def initialize(settings: Settings) -> None:
+    """Initialize the system.
 
-def initialize_system_log(log_file: str = "") -> None:
-    # Logging format
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    Creates the folders for logs, models, and outputs if they do not exist.
+    """
     
-    # Basic configuration
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    # Enable logging to file
-    if log_file:
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(formatter)
-        logging.getLogger('').addHandler(file_handler)
-
-    logging.info("System Logger initialized")
+    # Create the folders for logs, models, and outputs if they do not exist
+    for folder in [settings.log_dir, settings.model_dir, settings.out_dir]:
+        folder = os.path.join(folder, settings.job_name + "-" + settings.model_name)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
     
+    print(f"Job: {settings.job_name}, Model: {settings.model_name}, Device: {device}")

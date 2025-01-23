@@ -1,26 +1,24 @@
 # Virtual environment
 .venv/
+.conda
+
+# Text editors
+.vscode/
+
 
 # Python
 __pycache__/
 
-# Jupyter Notebook
-
-# Test
-testing_code.ipynb
-testing_code.py
-
-# Log files
-*.log
+# Storage directories
+model/
 logs/
-
-# Dataset
+out/
 data/
-
-# Temporary files
 temp/
+config/
 
-# Model directory
-/model/
+system.log
 
-.conda
+# Test python and jupyter notebooks to test some code
+jupyter_notebooks/test.ipynb
+testin.py
