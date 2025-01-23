@@ -13,5 +13,6 @@
     "test_images_idx": [0, 59, 135],
     "system_log_file": "logs/system.log",
     "model_save_interval": 5,
-    "output_interval": 1
+    "output_interval": 1,
+    "upscale_factor": 2
 }

@@ -1,19 +1,10 @@
 import torch 
 import json
+import os
 
 from typing import List, Dict
 
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# class Settings:
-#     system_log_file = "system.log"
-#     system_log_to_console = True
-#     log_dir: str = "logs"
-#     dataset_path = r"D:\Datasets\DataV2\Data"
-#     system_load_model: bool = False
-#     system_model_path: str = "models"
-#     system_model_name: str = "model.pth"
-#     system_model_save_interval: int = 1
 
 class Settings:
     def __init__(self, settings_path: str = "config/config.json", model_name: str = "WDSS"):
@@ -35,6 +26,19 @@ class Settings:
         self.system_log_file: str = settings["system_log_file"] # For system logs like errors, warnings, etc.
         self.model_save_interval: int = settings["model_save_interval"] # Save model every x epochs
         self.output_interval: int = settings["output_interval"] # Save output every x epochs
+        self.upscale_factor: int = settings["upscale_factor"]
+
+    def get_full_path(self, folder: str) -> str:
+        return os.path.join(folder, self.job_name + "-" + self.model_name)
+    
+    def model_path(self) -> str:
+        return self.get_full_path(self.model_dir)
+    
+    def log_path(self) -> str:
+        return self.get_full_path(self.log_dir)
+    
+    def out_path(self) -> str:
+        return self.get_full_path(self.out_dir)
 
     def __str__(self):
         return f"Settings: {self.__dict__}"
