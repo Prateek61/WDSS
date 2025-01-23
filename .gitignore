@@ -22,3 +22,4 @@ system.log
 # Test python and jupyter notebooks to test some code
 jupyter_notebooks/test.ipynb
 testin.py
+!config/config-example.json

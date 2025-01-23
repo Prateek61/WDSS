@@ -11,8 +11,7 @@ def initialize(settings: Settings) -> None:
     """
     
     # Create the folders for logs, models, and outputs if they do not exist
-    for folder in [settings.log_dir, settings.model_dir, settings.out_dir]:
-        folder = os.path.join(folder, settings.job_name + "-" + settings.model_name)
+    for folder in [settings.log_path(), settings.model_path(), settings.out_path()]:
         if not os.path.exists(folder):
             os.makedirs(folder)
     
