@@ -129,32 +129,7 @@ class CriterionSSIM_MSE(CriterionBase):
         # Return the total loss and the individual losses
         return total_loss, {'ssim_image': ssim_image, 'ssim_wavelets': ssim_wavelets, 'mse_image': mse_image, 'mse_wavelets': mse_wavelets, 'total_loss': total_loss}
 
-
-
-# class CriteronMSE_SSIM(nn.Module):
-#     def __init__(self, alpha: float = 0.8, channels: int = 3):
-#         super(CriteronMSE_SSIM, self).__init__()
-#         self.alpha = alpha
-#         self.channels = channels
-#         self.mse = nn.MSELoss().to(device)
-#         self.ssim = SSIM(channel=channels).to(device)
-
-#     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-#         return self.alpha * self.mse(input, target) + (1 - self.alpha) * (1 - self.ssim(input, target))
-    
-# class CriteronSSIM_LPIPS(nn.Module):
-#     def __init__(self, alpha: float = 0.6, beta: float = 0.4, channels: int = 3):
-#         super(CriteronSSIM_LPIPS, self).__init__()
-#         self.alpha = alpha
-#         self.beta = beta
-#         self.channels = channels
-#         self.ssim = SSIM(channel=channels).to(device)
-#         self.lpips = ImageEvaluator.lipps_model
-
-#     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-#         return self.alpha * (1 - self.ssim(input, target)) + self.beta * self.lpips(input, target)
-    
-    
+      
 class CriteronList(nn.Module):
     def __init__(self, criterions: List[nn.Module], weights: List[float]):
         super(CriteronList, self).__init__()
@@ -171,6 +146,41 @@ class L1Norm(nn.Module):
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         return torch.sum(torch.abs(prediction - target)) / torch.numel(prediction)
+    
+class SSIM_L1(CriterionBase):
+    def __init__(self, weights: Dict[str, float] = {}):
+        super(SSIM_L1, self).__init__()
+        if not weights:
+            self.weights = {
+                'ssim_image': 0.1,
+                'ssim_wavelets': 0.1,
+                'l1_image': 0.5,
+                'l1_wavelets': 0.5
+            }
+        else:
+            self.weights = weights
+
+        self.ssim = SSIM()
+        self.l1 = L1Norm()
+
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        # Compute the SSIM loss for the predicted image
+        ssim_image = 1 - self.ssim.forward(predicted_image, target_image)
+        ssim_approx = 1 - self.ssim.forward(predicted_wavelets[:, 0:3, :, :], target_wavelets[:, 0:3, :, :])
+        ssim_horizontal = 1 - self.ssim.forward(predicted_wavelets[:, 3:6, :, :], target_wavelets[:, 3:6, :, :])
+        ssim_vertical = 1 - self.ssim.forward(predicted_wavelets[:, 6:9, :, :], target_wavelets[:, 6:9, :, :])
+        ssim_diagonal = 1 - self.ssim.forward(predicted_wavelets[:, 9:12, :, :], target_wavelets[:, 9:12, :, :])
+        ssim_wavelets = (ssim_approx + ssim_horizontal + ssim_vertical + ssim_diagonal) / 4
+
+        # Compute the L1 loss for the predicted image
+        l1_image = torch.mean(self.l1(predicted_image, target_image))
+        l1_wavelets = torch.mean(self.l1(predicted_wavelets, target_wavelets))
+
+         # Compute the total loss
+        total_loss = self.weights['ssim_image'] * ssim_image + self.weights['ssim_wavelets'] * ssim_wavelets + self.weights['l1_image'] * l1_image + self.weights['l1_wavelets'] * l1_wavelets
+
+        # Return the total loss and the individual losses
+        return total_loss, {'ssim_image': ssim_image, 'ssim_wavelets': ssim_wavelets, 'l1_image': l1_image, 'l1_wavelets': l1_wavelets, 'total_loss': total_loss}
 
 class WaveletCriterion(nn.Module):
     def __init__(self, weights: Dict[str, float] = {}):
