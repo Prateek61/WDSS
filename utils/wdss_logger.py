@@ -8,7 +8,6 @@ from typing import Dict
 # Logger that logs network details like loss, accuracy, etc. to a file
 class NetworkLogger:
     def __init__(self, log_path: str, force_print: bool = False):
-        self.force_print = force_print
         self.log_path = log_path
 
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -17,10 +16,14 @@ class NetworkLogger:
         self.writers: Dict[str, SummaryWriter] = {}
 
 
-    def log_scalar(self, tag, scalar_value, global_step, component_name : Constant = "" , print_log = False) -> None:
+    def log_scalar(self, tag, scalar_value, global_step, component_name : Constant = "") -> None:
         self.get_writer(component_name).add_scalar(tag, scalar_value, global_step)
-        if print_log or self.force_print:
-            print('[%d] %s %s: %.6f' %(global_step + 1, component_name, tag, scalar_value))
+
+    def log_scalars(self, main_tag, tag_scalar_dict, global_step, component_name : Constant = "") -> None:
+        self.get_writer(component_name).add_scalars(main_tag, tag_scalar_dict, global_step)
+
+    def log_image(self, tag, img_tensor, global_step, component_name: Constant = "") -> None:
+        self.get_writer(component_name).add_image(tag, img_tensor, global_step)
 
 
     def get_writer(self, component_name: Constant = "") -> SummaryWriter:

@@ -297,9 +297,13 @@ class Trainer:
         """Log the losses to tensorboard.
         """
 
-        self.logger.log_scalar('train_loss', train_loss, step)
-        self.logger.log_scalar('val_loss', val_loss, step)
+        self.logger.log_scalars('loss', {'train': train_loss, 'val': val_loss}, step)
         for key in all_train_losses:
-            self.logger.log_scalar(f'train_{key}', all_train_losses[key], step)
-        for key in all_val_losses:
-            self.logger.log_scalar(f'val_{key}', all_val_losses[key], step)
+            self.logger.log_scalars(f'loss_{key}', {'train': all_train_losses[key], 'val': all_val_losses[key]}, step)
+
+    
+    def log_model_prediction(self, img: torch.Tensor, step: int):
+        """Log the model output image to tensorboard.
+        """
+
+        self.logger.log_image('prediction', img, step)
