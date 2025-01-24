@@ -148,9 +148,10 @@ class ImageUtils:
             # Normalize the image
             if normalize:
                 image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                image = np.clip(image, 0, 255)
             else:
                 # Clip the pixel values to [0, 1]
-                image = np.clip(image, 0, 1)
+                image = np.clip(image, 0.0, 1.0)
             try:
                 channels = image.shape[2]
             except:
@@ -189,6 +190,7 @@ class ImageUtils:
                 # Normalize the image
                 if normalize:
                     image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                    image = np.clip(image, 0, 255)
                 else:
                     # Clip the pixel values to [0, 1]
                     image = np.clip(image, 0, 1)

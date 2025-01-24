@@ -1,5 +1,5 @@
 # Losses and evaluation metrics for the network
-
+from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 # Torch ignite  
@@ -50,13 +50,50 @@ class ImageEvaluator:
 
         return lpips_val
 
-class CriteronMSE(nn.Module):
+# Abstract base class for criterion
+class CriterionBase(nn.Module, ABC):
     def __init__(self):
-        super(CriteronMSE, self).__init__()
+        super(CriterionBase, self).__init__()
+
+    @abstractmethod
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """Forward pass of the criterion
+
+        Args:
+            predicted_wavelets (torch.Tensor): Predicted wavelet coefficients
+            target_wavelets (torch.Tensor): Target wavelet coefficients
+            predicted_image (torch.Tensor): Predicted image
+            target_image (torch.Tensor): Target image
+
+        Returns:
+            Tuple[torch.Tensor, Dict[str, torch.Tensor]]: Total loss and dictionary of individual losses
+        """
+        pass
+
+class CriterionMSE(CriterionBase):
+    def __init__(self, alpha: float = 0.5, beta: float = 0.5):
+        """ Mean Squared Error (MSE) criterion
+
+        Args:
+            alpha (float, optional): Weight for the predicted image loss. Defaults to 0.5.
+            beta (float, optional): Weight for the wavelet coefficients loss. Defaults to 0.5.
+        """
+        super(CriterionMSE, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
         self.mse = nn.MSELoss()
 
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        return self.mse(input, target)
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        # Compute the MSE loss for the predicted image
+        mse_image = self.mse.forward(predicted_image, target_image)
+        mse_wavelets = self.mse.forward(predicted_wavelets, target_wavelets)
+
+        # Compute the total loss
+        total_loss = self.alpha * mse_image + self.beta * mse_wavelets
+
+        # Return the total loss and the individual losses
+        return total_loss, {'mse_image': mse_image, 'mse_wavelets': mse_wavelets, 'total_loss': total_loss}
+
 
 class CriteronMSE_SSIM(nn.Module):
     def __init__(self, alpha: float = 0.8, channels: int = 3):

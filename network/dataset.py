@@ -11,6 +11,9 @@ from random import randint
 import cv2
 import numpy as np
 from utils.wavelet import WaveletProcessor
+from config import Settings
+
+import threading
 
 from typing import Dict, List, Tuple
     
@@ -26,13 +29,15 @@ class GB_Type(Enum):
     NORMAL = 'WorldNormal'
     METALLIC = 'Metallic'
     ROUGHNESS = 'Roughness'
+    SPECULAR = 'Specular'
 
 GBufferChannels = {
     GB_Type.MOTION_VECTOR: [0, 1],
     GB_Type.DEPTH: [0],
     GB_Type.METALLIC: [0],
     GB_Type.ROUGHNESS: [0],
-    GB_Type.NoV: [0]
+    GB_Type.NoV: [0],
+    GB_Type.SPECULAR: [0]
 }
 
 class RawFrameGroup(Enum):
@@ -50,7 +55,6 @@ class FrameGroup(Enum):
     LR = 'LR'
     GB = 'GB'
     TEMPORAL = 'TEMPORAL'
-    TEMPORAL_GB = 'TEMPORAL_GB'
 
 class WDSSDatasetCompressed(Dataset):
     FRAME_PATHS = {
@@ -84,17 +88,9 @@ class WDSSDatasetCompressed(Dataset):
         gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL]], dim=0)
         gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC]], dim=0)
         gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.ROUGHNESS]], dim=0)
-        
-        temporal_gb: torch.Tensor = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.BASE_COLOR]
-        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NoV]], dim=0)
-        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DEPTH]], dim=0)
-        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NORMAL]], dim=0)
-        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC]], dim=0)
-        temporal_gb = torch.cat([temporal_gb, raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.ROUGHNESS]], dim=0)
+        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.SPECULAR]], dim=0)
 
         res[FrameGroup.GB.value] = gb
-        res[FrameGroup.TEMPORAL_GB.value] = temporal_gb
-        
 
         return res
 
@@ -102,7 +98,12 @@ class WDSSDatasetCompressed(Dataset):
     def _get_raw_frames(self, frame_no: int, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]:
         """Returns raw frame patches.
         """
-        res = {}
+        res: Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor] = {}
+
+        # This is not working inside the with block
+        thread_hr_gb: Dict[GB_Type, torch.Tensor] = {}
+        thread_lr_gb: Dict[GB_Type, torch.Tensor] = {}
+        thread_temporal_gb: Dict[GB_Type, torch.Tensor] = {}
 
         zip_file_idx = frame_no // self.frames_per_zip
         frame_idx = frame_no % self.frames_per_zip
@@ -112,12 +113,32 @@ class WDSSDatasetCompressed(Dataset):
         with zipfile.ZipFile(os.path.join(self.root_dir, self.compressed_files[zip_file_idx]), 'r') as zip_ref:
             base_folder = self._get_base_folder_name(zip_ref)
 
+            
+
+            def threaded_hr_gb():
+                hr_gbuffers = self._get_hr_g_buffers(frame_idx, zip_ref, base_folder)
+                res.update({RawFrameGroup.HR_GB: hr_gbuffers})
+            def threaded_lr_gb():
+                lr_gbuffers = self._get_lr_g_buffers(frame_idx, zip_ref, base_folder)
+                res.update({RawFrameGroup.LR_GB: lr_gbuffers})
+            def threaded_temporal_gb():
+                temporal_gbuffers = self._get_temporal_g_buffers(frame_idx - 1, zip_ref, base_folder)
+                res.update({RawFrameGroup.TEMPORAL_GB: temporal_gbuffers})
+
+            threads: List[threading.Thread] = []
+            threads.append(threading.Thread(target=threaded_hr_gb))
+            threads.append(threading.Thread(target=threaded_lr_gb))
+            threads.append(threading.Thread(target=threaded_temporal_gb))
+            for thread in threads:
+                thread.start()
+
             res[RawFrameGroup.HR] = self._get_hr_frame(frame_idx, zip_ref, base_folder)
             res[RawFrameGroup.LR] = self._get_lr_frame(frame_idx, zip_ref, base_folder)
-            res[RawFrameGroup.HR_GB] = self._get_hr_g_buffers(frame_idx, zip_ref, base_folder)
-            res[RawFrameGroup.LR_GB] = self._get_lr_g_buffers(frame_idx, zip_ref, base_folder)
             res[RawFrameGroup.TEMPORAL] = self._get_hr_frame(frame_idx - 1, zip_ref, base_folder)
-            res[RawFrameGroup.TEMPORAL_GB] = self._get_hr_g_buffers(frame_idx - 1, zip_ref, base_folder)
+
+            for thread in threads:
+                thread.join()
+
 
         if self.patch_size and not no_patch:
             # Get the patch position
@@ -130,6 +151,7 @@ class WDSSDatasetCompressed(Dataset):
             for gb_type in GB_Type:
                 res[RawFrameGroup.HR_GB][gb_type] = res[RawFrameGroup.HR_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
                 res[RawFrameGroup.LR_GB][gb_type] = res[RawFrameGroup.LR_GB][gb_type][:, lr_window[0][0]:lr_window[1][0], lr_window[0][1]:lr_window[1][1]]
+            for gb_type in [GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL]:
                 res[RawFrameGroup.TEMPORAL_GB][gb_type] = res[RawFrameGroup.TEMPORAL_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
 
         return res
@@ -156,6 +178,18 @@ class WDSSDatasetCompressed(Dataset):
                 frame = frame[:, :, GBufferChannels[gb_type]]
             res[gb_type] = torch.from_numpy(frame).permute(2, 0, 1)
 
+        return res
+    
+    def _get_temporal_g_buffers(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> Dict[GB_Type, torch.Tensor]:
+        # Just need the BaseColor, Depth, and Normal
+        res = {}
+        for gb_type in [GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL]:
+            buffer = zip_ref.read(base_folder + self._get_hr_gb_path(frame_idx, gb_type))
+            frame = ImageUtils.decode_exr_image_opencv(buffer)
+            if gb_type in GBufferChannels:
+                frame = frame[:, :, GBufferChannels[gb_type]]
+            res[gb_type] = torch.from_numpy(frame).permute(2, 0, 1)
+        
         return res
     
 
@@ -239,3 +273,16 @@ class WDSSDatasetCompressed(Dataset):
 
     def __len__(self):
         return self.total_frames
+    
+    @staticmethod
+    def get_datasets(settings: Settings) -> Tuple['WDSSDatasetCompressed', 'WDSSDatasetCompressed', 'WDSSDatasetCompressed']:
+        """Get the training, validation, and test datasets.
+
+        Returns:
+            Tuple containing the training, validation, and test datasets.
+        """
+        train_dataset = WDSSDatasetCompressed(settings.train_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor)
+        val_dataset = WDSSDatasetCompressed(settings.val_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor)
+        test_dataset = WDSSDatasetCompressed(settings.test_dir, settings.frames_per_zip, 0, settings.upscale_factor)
+
+        return train_dataset, val_dataset, test_dataset

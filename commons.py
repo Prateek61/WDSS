@@ -12,7 +12,6 @@ def initialize(settings: Settings) -> None:
     
     # Create the folders for logs, models, and outputs if they do not exist
     for folder in [settings.log_path(), settings.model_path(), settings.out_path()]:
-        if not os.path.exists(folder):
-            os.makedirs(folder)
+        os.makedirs(folder, exist_ok=True)
     
     print(f"Job: {settings.job_name}, Model: {settings.model_name}, Device: {device}")
