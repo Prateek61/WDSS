@@ -18,20 +18,24 @@ class Trainer:
     def __init__(self, settings: Settings, 
                  model: ModelBase, 
                  optimizer: torch.optim.Optimizer, 
+                 scheduler: torch.optim.lr_scheduler._LRScheduler,
                  criterion: CriterionBase,
                  train_dataset: WDSSDatasetCompressed,
-                 validation_dataset: WDSSDatasetCompressed):
+                 validation_dataset: WDSSDatasetCompressed,
+                 test_dataset: WDSSDatasetCompressed):
         super(Trainer, self).__init__()
 
         self.settings = settings
         self.model = model
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.criterion = criterion
         self.train_dataset = train_dataset
         self.validation_dataset = validation_dataset
         self.best_validation_loss = float('inf')
         self.total_epochs = 0
-        self.logger = NetworkLogger(settings.log_path(), False)
+        self.logger = NetworkLogger(settings.log_path())
+        self.test_dataset = test_dataset
 
         # For threading
         self._batch_loss: float | None = None
@@ -107,6 +111,40 @@ class Trainer:
         self._batch_losses_all = losses_float
 
 
+    def log_test_images(self, step: int):
+        """Log the test images to tensorboard.
+        """
+
+        for i in self.settings.test_images_idx:
+            frame = self.test_dataset[i]
+
+            lr_inp = frame[FrameGroup.LR.value].unsqueeze(0).to(device)
+            gb_inp = frame[FrameGroup.GB.value].unsqueeze(0).to(device)
+            temporal_inp = frame[FrameGroup.TEMPORAL.value].unsqueeze(0).to(device)
+
+            self.model.eval()
+            with torch.no_grad():
+                wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp)
+
+            self.log_image(img[0].detach().cpu(), f'pred_{i}', step)
+            self.log_wavelet(wavelet[0].detach().cpu(), f'wavelet_pred_{i}', step)
+
+
+    def log_gt_images(self):
+        """Log the ground truth images to tensorboard.
+        """
+
+        for i in self.settings.test_images_idx:
+            frame = self.test_dataset[i]
+
+            hr_gt = frame[FrameGroup.HR.value].unsqueeze(0).to(device)
+            wavelet = WaveletProcessor.batch_wt(hr_gt)
+
+            self.log_image(hr_gt[0].detach().cpu(), f'gt_{i}', None)
+            self.log_wavelet(wavelet[0].detach().cpu(), f'wavelet_gt_{i}', None)
+            
+
+
     def train(self, num_epochs: int):
         """Train the model
 
@@ -114,6 +152,9 @@ class Trainer:
             num_epochs (int): Number of epochs to train the model for.
         """
         
+        if self.total_epochs == 0:
+            self.log_gt_images()
+
         train_loader = DataLoader(self.train_dataset, batch_size=self.settings.batch_size, shuffle=True)
         validation_loader = DataLoader(self.validation_dataset, batch_size=self.settings.batch_size, shuffle=False)
 
@@ -130,14 +171,14 @@ class Trainer:
             
             # Get the total number of batches
             num_batches: int = len(train_loader)
-            total_final_loss: float = 0.0
-            total_losses: Dict[str, float] = {}
+            train_epoch_loss: float = 0.0
+            train_epoch_losses: Dict[str, float] = {}
 
             self.model.train()
 
             # Progress bar
             progress_bar = tqdm(total=num_batches, unit='batch', position=0, leave=True)
-            progress_bar.set_description(f'Train Epoch: {self.total_epochs} : {epoch + 1}/{num_epochs}')
+            progress_bar.set_description(f'Train Epoch: {self.total_epochs + 1} : {epoch + 1}/{num_epochs}')
             progress_bar.set_postfix_str('Loss: N/A')
 
             for i, batch in enumerate(train_loader):
@@ -148,18 +189,19 @@ class Trainer:
                 # Update the losses and the progress bar
                 if self._batch_loss is not None:
                     # Updade the final loss
-                    total_final_loss += self._batch_loss
+                    train_epoch_loss += self._batch_loss
                     # Update the total losses
                     for key in self._batch_losses_all:
-                        total_losses[key] = total_losses.get(key, 0.0) + self._batch_losses_all[key]
+                        train_epoch_losses[key] = train_epoch_losses.get(key, 0.0) + self._batch_losses_all[key]
 
                     # Update the progress bar
                     progress_bar.update(1)
-                    progress_bar.set_postfix_str(f'Loss: {(total_final_loss / i):.4f}')
+                    progress_bar.set_postfix_str(f'Loss: {(train_epoch_loss / i):.4f}')
 
                 # Start the next batch
                 train_thread = threading.Thread(target=self._train_batch, args=(batch,))
                 train_thread.start()
+
 
             # Wait for the last batch to finish training
             if train_thread.is_alive():
@@ -167,21 +209,21 @@ class Trainer:
 
             # Update the losses and the progress bar
             # Updade the final loss
-            total_final_loss += self._batch_loss
+            train_epoch_loss += self._batch_loss
             # Update the total losses
             for key in self._batch_losses_all:
-                total_losses[key] = total_losses.get(key, 0.0) + self._batch_losses_all[key]
+                train_epoch_losses[key] = train_epoch_losses.get(key, 0.0) + self._batch_losses_all[key]
 
             # Update the progress bar
             progress_bar.update(1)
-            progress_bar.set_postfix_str(f'Loss: {(total_final_loss / num_batches):.4f}')
+            progress_bar.set_postfix_str(f'Loss: {(train_epoch_loss / num_batches):.4f}')
             # Close the progress bar
             progress_bar.close()
 
             # Update the losses to be the average
-            for key in total_losses:
-                total_losses[key] /= num_batches
-            total_final_loss /= num_batches
+            for key in train_epoch_losses:
+                train_epoch_losses[key] /= num_batches
+            train_epoch_loss /= num_batches
 
             # Validation
 
@@ -194,15 +236,15 @@ class Trainer:
             validation_thread.start()
 
             # Losses for validation
-            total_final_loss_val: float = 0.0
-            total_losses_val: Dict[str, float] = {}
+            val_epoch_loss: float = 0.0
+            val_epoch_losses: Dict[str, float] = {}
             num_batches_val: int = len(validation_loader)
 
             self.model.eval()
 
             # Progress bar
             progress_bar = tqdm(total=num_batches_val, unit='batch', position=0, leave=True)
-            progress_bar.set_description(f'Valid Epoch: {self.total_epochs} : {epoch + 1}/{num_epochs}')
+            progress_bar.set_description(f'Valid Epoch: {self.total_epochs + 1} : {epoch + 1}/{num_epochs}')
             progress_bar.set_postfix_str('Loss: N/A')
 
             for i, batch in enumerate(validation_loader):
@@ -213,14 +255,14 @@ class Trainer:
                 # Update the losses and the progress bar
                 if self._batch_loss is not None:
                     # Updade the final loss
-                    total_final_loss_val += self._batch_loss
+                    val_epoch_loss += self._batch_loss
                     # Update the total losses
                     for key in self._batch_losses_all:
-                        total_losses_val[key] = total_losses_val.get(key, 0.0) + self._batch_losses_all[key]
+                        val_epoch_losses[key] = val_epoch_losses.get(key, 0.0) + self._batch_losses_all[key]
 
                     # Update the progress bar
                     progress_bar.update(1)
-                    progress_bar.set_postfix_str(f'Loss: {(total_final_loss_val / i):.4f}')
+                    progress_bar.set_postfix_str(f'Loss: {(val_epoch_loss / i):.4f}')
 
                 # Start the next batch
                 validation_thread = threading.Thread(target=self._validate_batch, args=(batch,))
@@ -232,37 +274,48 @@ class Trainer:
 
             # Update the losses and the progress bar
             # Updade the final loss
-            total_final_loss_val += self._batch_loss
+            val_epoch_loss += self._batch_loss
             # Update the total losses
             for key in self._batch_losses_all:
-                total_losses_val[key] = total_losses_val.get(key, 0.0) + self._batch_losses_all[key]
+                val_epoch_losses[key] = val_epoch_losses.get(key, 0.0) + self._batch_losses_all[key]
 
             # Update the progress bar
             progress_bar.update(1)
-            progress_bar.set_postfix_str(f'Loss: {(total_final_loss_val / num_batches_val):.4f}')
+            progress_bar.set_postfix_str(f'Loss: {(val_epoch_loss / num_batches_val):.4f}')
             # Close the progress bar
             progress_bar.close()
 
             # Update the losses to be the average
-            for key in total_losses_val:
-                total_losses_val[key] /= num_batches_val
+            for key in val_epoch_losses:
+                val_epoch_losses[key] /= num_batches_val
 
-            total_final_loss_val /= num_batches_val
+            val_epoch_loss /= num_batches_val
+
+            # Increment the total epochs
+            self.total_epochs += 1
 
             # Log the losses
-            self.log_losses(total_final_loss, total_losses, total_final_loss_val, total_losses_val, self.total_epochs)
+            self.log_losses(train_epoch_loss, train_epoch_losses, val_epoch_loss, val_epoch_losses, self.total_epochs)
+            
+            # Log the test images
+            if self.total_epochs % self.settings.output_interval == 0:
+                self.log_test_images(self.total_epochs)
 
             # Save the model checkpoint if the validation loss is the best
-            if total_final_loss_val < self.best_validation_loss:
-                self.best_validation_loss = total_final_loss_val
+            if val_epoch_loss < self.best_validation_loss:
+                self.best_validation_loss = val_epoch_loss
                 self.save_checkpoint('best.pth')
 
             # Save the model checkpoint as per frequency in settings
             if self.total_epochs % self.settings.model_save_interval == 0:
                 self.save_checkpoint(f'{self.total_epochs}.pth')
 
-            # Increment the total epochs
-            self.total_epochs += 1
+            # Step the scheduler
+            self.scheduler.step()
+
+        # Save the final model checkpoint
+        if self.total_epochs % self.settings.model_save_interval != 0:
+            self.save_checkpoint(f'{self.total_epochs}.pth')
 
     def save_checkpoint(self, file_name: str):
         """Save the model checkpoint.
@@ -301,9 +354,41 @@ class Trainer:
         for key in all_train_losses:
             self.logger.log_scalars(f'loss_{key}', {'train': all_train_losses[key], 'val': all_val_losses[key]}, step)
 
-    
-    def log_model_prediction(self, img: torch.Tensor, step: int):
-        """Log the model output image to tensorboard.
+
+    def log_image(self, img: torch.Tensor, tag: str = "", step: int | None = None):
+        """Log the image to tensorboard.
         """
 
-        self.logger.log_image('prediction', img, step)
+        self.logger.log_image(tag, img, step)
+
+    def log_wavelet(self, wavelet: torch.Tensor, tag: str = "", step: int | None = None):
+        """Log the wavelet coefficients to tensorboard.
+        """
+        # The wavelet has 12 channels, 4 coefficients for every RGB channel
+        # We need to stack the coefficients in a single image
+        # Stack as 
+        # Approx, Horizontal
+        # Vertical, Diagonal
+
+        # If wavelets have 4 dims, squeeze the first dim
+        if wavelet.dim() == 4:
+            wavelet = wavelet.squeeze(0)
+
+        _, h, w = wavelet.shape
+
+        # Get the coefficients
+        approx = wavelet[0:3, :, :]
+        horizontal = wavelet[3:6, :, :]
+        vertical = wavelet[6:9, :, :]
+        diagonal = wavelet[9:12, :, :]
+
+        # Stack the coefficients
+        # Final image will be of shape (batch_size, 3, height * 2, width * 2)
+        wavelet_img = torch.zeros((3, h * 2, w * 2), device=wavelet.device)
+
+        wavelet_img[:, :h, :w] = approx
+        wavelet_img[:, :h, w:] = vertical
+        wavelet_img[:, h:, :w] = diagonal
+        wavelet_img[:, h:, w:] = horizontal
+
+        self.logger.log_image(tag, wavelet_img, step)

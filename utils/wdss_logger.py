@@ -7,7 +7,7 @@ from typing import Dict
 
 # Logger that logs network details like loss, accuracy, etc. to a file
 class NetworkLogger:
-    def __init__(self, log_path: str, force_print: bool = False):
+    def __init__(self, log_path: str):
         self.log_path = log_path
 
         os.makedirs(os.path.dirname(log_path), exist_ok=True)

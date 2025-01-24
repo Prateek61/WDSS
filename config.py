@@ -11,9 +11,9 @@ class Settings:
         with open(settings_path, "r") as f:
             settings = json.load(f)
         self.job_name: str = settings["job_name"]
+        self.out_dir: str = settings["out_dir"]
         self.model_dir: str = settings["model_dir"]
         self.log_dir: str = settings["log_dir"] # For tensorboard logs
-        self.out_dir: str = settings["out_dir"]
         self.train_dir: str = settings["train_dir"]
         self.val_dir: str = settings["val_dir"]
         self.test_dir: str = settings["test_dir"]
@@ -29,16 +29,13 @@ class Settings:
         self.upscale_factor: int = settings["upscale_factor"]
 
     def get_full_path(self, folder: str) -> str:
-        return os.path.join(folder, self.job_name + "-" + self.model_name)
+        return os.path.join(self.out_dir, f'{self.job_name}-{self.model_name}', folder)
     
     def model_path(self) -> str:
         return self.get_full_path(self.model_dir)
     
     def log_path(self) -> str:
         return self.get_full_path(self.log_dir)
-    
-    def out_path(self) -> str:
-        return self.get_full_path(self.out_dir)
 
     def __str__(self):
         return f"Settings: {self.__dict__}"
