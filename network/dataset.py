@@ -71,7 +71,9 @@ class WDSSDatasetCompressed(Dataset):
         self.patch_size = patch_size
         self.upscale_factor = upscale_factor
 
-        self.total_frames = len(self.compressed_files) * frames_per_zip
+        self.patches_per_frame = self._patches_per_frame((360, 640), patch_size)
+        self.total_frames = len(self.compressed_files) * self.patches_per_frame * frames_per_zip
+
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         raw_frames = self._get_raw_frames(idx)
@@ -105,6 +107,9 @@ class WDSSDatasetCompressed(Dataset):
         thread_lr_gb: Dict[GB_Type, torch.Tensor] = {}
         thread_temporal_gb: Dict[GB_Type, torch.Tensor] = {}
 
+        if not no_patch:
+            patch_idx = frame_no % self.patches_per_frame
+            frame_no = frame_no // self.patches_per_frame
         zip_file_idx = frame_no // self.frames_per_zip
         frame_idx = frame_no % self.frames_per_zip
         frame_idx += 2 # Ignore the first frame, and second frame wont have temporal data as first frame is bad
@@ -112,8 +117,6 @@ class WDSSDatasetCompressed(Dataset):
         # Open the zip file
         with zipfile.ZipFile(os.path.join(self.root_dir, self.compressed_files[zip_file_idx]), 'r') as zip_ref:
             base_folder = self._get_base_folder_name(zip_ref)
-
-            
 
             def threaded_hr_gb():
                 hr_gbuffers = self._get_hr_g_buffers(frame_idx, zip_ref, base_folder)
@@ -144,7 +147,7 @@ class WDSSDatasetCompressed(Dataset):
             # Get the patch position
             # Which is a random crop from the frame
             _, lr_h, lr_w = res[RawFrameGroup.LR].shape
-            lr_window, hr_window = self._get_random_patch_window((lr_h, lr_w), self.upscale_factor, self.patch_size)
+            lr_window, hr_window = self._get_random_patch_window(patch_idx ,(lr_h, lr_w), self.upscale_factor, self.patch_size)
             res[RawFrameGroup.HR] = res[RawFrameGroup.HR][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
             res[RawFrameGroup.LR] = res[RawFrameGroup.LR][:, lr_window[0][0]:lr_window[1][0], lr_window[0][1]:lr_window[1][1]]
             res[RawFrameGroup.TEMPORAL] = res[RawFrameGroup.TEMPORAL][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
@@ -239,27 +242,52 @@ class WDSSDatasetCompressed(Dataset):
 
         return zip_file.namelist()[0].split('/')[0] + '/'
 
-    def _get_random_patch_window(self, LowResolution: Tuple[int, int], UpscaleFactor: float, PatchSize: int) -> Tuple[Tuple[Tuple[int, int], Tuple[int, int]], Tuple[Tuple[int, int], Tuple[int, int]]]:
-        """Returns a random patch window for the given low resolution and upscale factor.
+
+    def _patches_per_frame(self, low_resolution: Tuple[int, int], patch_size: int) -> int:
+        """Return the number of patches in the frame
+        """
+
+        if self.patch_size == 0:
+            return 1
+
+        lr_h, lr_w = low_resolution
+        patch_h, patch_w = patch_size, patch_size
+
+        num_patches_h = (lr_h // patch_h) + 1
+        num_patches_w = (lr_w // patch_w) + 1
+
+        return num_patches_h * num_patches_w
+
+
+    def _get_random_patch_window(self, patch_idx: int, LowResolution: Tuple[int, int], UpscaleFactor: float, PatchSize: int) -> Tuple[Tuple[Tuple[int, int], Tuple[int, int]], Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """Returns a patch window for the given low resolution and upscale factor and a patch index.
 
         Returns:
             Tuple containing the patch window (y, x) for (tl, br) in LR and HR.
         """
-
+        # LR and patch size
         lr_h, lr_w = LowResolution
         patch_h, patch_w = PatchSize, PatchSize
-
-        # Number of patches in the image
+        # Number of patches in hight and width direction
         num_patches_h = (lr_h // patch_h) + 1
         num_patches_w = (lr_w // patch_w) + 1
-
-        # Randomly select a patch
-        patch_idx_y = randint(0, num_patches_h - 1)
-        patch_idx_x = randint(0, num_patches_w - 1)
-
-        # Get the patch window
-        patch_y = min(patch_idx_y * (lr_h // num_patches_h), lr_h - patch_h)
-        patch_x = min(patch_idx_x * (lr_w // num_patches_w), lr_w - patch_w) 
+        # Patch index in hight and width direction
+        patch_idx_y, patch_idx_x = divmod(patch_idx, num_patches_w)
+        # Temporary stride
+        tmp_stride_h = lr_h // num_patches_h
+        tmp_stride_w = lr_w // num_patches_w
+        # Stride in hight and width direction
+        stride_h = int((lr_h - patch_h * 0.10) // num_patches_h)
+        stride_w = int((lr_w - patch_w * 0.10) // num_patches_w)
+        # Patch position in LR
+        patch_y = int(patch_h * 0.05 + patch_idx_y * stride_h)
+        patch_x = int(patch_w * 0.05 + patch_idx_x * stride_w)
+        # Patch can move by 20% of the stride
+        patch_y += randint(-stride_h // 5, stride_h // 5)
+        patch_x += randint(-stride_w // 5, stride_w // 5)
+        # Clip the patch to the frame
+        patch_y = min(max(patch_y, 0), lr_h - patch_h)
+        patch_x = min(max(patch_x, 0), lr_w - patch_w)
 
         hr_patch_y_tl = patch_y * UpscaleFactor
         hr_patch_x_tl = patch_x * UpscaleFactor

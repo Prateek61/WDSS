@@ -228,7 +228,7 @@ class WaveletCriterion(nn.Module):
 
         # Compute the total loss
         total_loss = l1_loss + 0.2 * ssim_loss + 0.1 * lpips_loss
-        total_loss += (l1_loss_app + l1_loss_hor + l1_loss_ver + l1_loss_diag) / 4
+        # total_loss += (l1_loss_app + l1_loss_hor + l1_loss_ver + l1_loss_diag) / 4
         total_loss += 0.2 * (ssim_loss_app + ssim_loss_hor + ssim_loss_ver + ssim_loss_diag) / 4
         total_loss += 0.05 * lpips_loss_app
 
@@ -236,10 +236,10 @@ class WaveletCriterion(nn.Module):
         losses['l1_loss'] = l1_loss
         losses['ssim_loss'] = ssim_loss
         losses['lpips_loss'] = lpips_loss
-        losses['l1_loss_app'] = l1_loss_app
-        losses['l1_loss_hor'] = l1_loss_hor
-        losses['l1_loss_ver'] = l1_loss_ver
-        losses['l1_loss_diag'] = l1_loss_diag
+        # losses['l1_loss_app'] = l1_loss_app
+        # losses['l1_loss_hor'] = l1_loss_hor
+        # losses['l1_loss_ver'] = l1_loss_ver
+        # losses['l1_loss_diag'] = l1_loss_diag
         losses['ssim_loss_app'] = ssim_loss_app
         losses['ssim_loss_hor'] = ssim_loss_hor
         losses['ssim_loss_ver'] = ssim_loss_ver
