@@ -147,9 +147,9 @@ class L1Norm(nn.Module):
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         return torch.sum(torch.abs(prediction - target)) / torch.numel(prediction)
     
-class SSIM_L1(CriterionBase):
+class CriterionSSIM_L1(CriterionBase):
     def __init__(self, weights: Dict[str, float] = {}):
-        super(SSIM_L1, self).__init__()
+        super(CriterionSSIM_L1, self).__init__()
         if not weights:
             self.weights = {
                 'ssim_image': 0.1,
