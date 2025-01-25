@@ -28,6 +28,7 @@ class Settings:
         self.output_interval: int = settings["output_interval"] # Save output every x epochs
         self.upscale_factor: int = settings["upscale_factor"]
         self.multi_patches_per_frame: bool = settings.get("multi_patches_per_frame", False)
+        self.num_threads: int = settings.get("num_threads", 8)
 
     def get_full_path(self, folder: str) -> str:
         return os.path.join(self.out_dir, f'{self.job_name}-{self.model_name}', folder)

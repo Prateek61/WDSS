@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from utils.wavelet import WaveletProcessor
 from config import Settings
+from multiprocessing.pool import ThreadPool, AsyncResult
 
 import threading
 
@@ -64,13 +65,14 @@ class WDSSDatasetCompressed(Dataset):
         'LR_GB_FOLDER': 'LowResGBuffer'
     }
 
-    def __init__(self, root_dir: str, frames_per_zip: int, patch_size: int = 0, upscale_factor: int = 2, multi_patches_per_frame: bool = False):
+    def __init__(self, root_dir: str, frames_per_zip: int, patch_size: int = 0, upscale_factor: int = 2, multi_patches_per_frame: bool = False, num_threads: int = 8):
         self.root_dir = root_dir
         self.frames_per_zip = frames_per_zip
         self.compressed_files = os.listdir(root_dir)
         self.patch_size = patch_size
         self.upscale_factor = upscale_factor
         self.multi_patches_per_frame = multi_patches_per_frame
+        self.thread_pool = ThreadPool(max(num_threads, 4))
 
         self.patches_per_frame = self._patches_per_frame((360, 640), patch_size)
         self.total_frames = len(self.compressed_files) * self.patches_per_frame * frames_per_zip
@@ -123,38 +125,19 @@ class WDSSDatasetCompressed(Dataset):
         with zipfile.ZipFile(os.path.join(self.root_dir, self.compressed_files[zip_file_idx]), 'r') as zip_ref:
             base_folder = self._get_base_folder_name(zip_ref)
 
-            def threaded_hr_gb():
-                hr_gbuffers = self._get_hr_g_buffers(frame_idx, zip_ref, base_folder)
-                res.update({RawFrameGroup.HR_GB: hr_gbuffers})
-            def threaded_lr_gb():
-                lr_gbuffers = self._get_lr_g_buffers(frame_idx, zip_ref, base_folder)
-                res.update({RawFrameGroup.LR_GB: lr_gbuffers})
-            def threaded_temporal_gb():
-                temporal_gbuffers = self._get_temporal_g_buffers(frame_idx - 1, zip_ref, base_folder)
-                res.update({RawFrameGroup.TEMPORAL_GB: temporal_gbuffers})
-            def threaded_hr_frame():
-                hr_frame = self._get_hr_frame(frame_idx, zip_ref, base_folder)
-                res.update({RawFrameGroup.HR: hr_frame})
-            def threaded_lr_frame():
-                lr_frame = self._get_lr_frame(frame_idx, zip_ref, base_folder)
-                res.update({RawFrameGroup.LR: lr_frame})
-            def threaded_temporal_frame():
-                temporal_frame = self._get_hr_frame(frame_idx - 1, zip_ref, base_folder)
-                res.update({RawFrameGroup.TEMPORAL: temporal_frame})
+            hr_frame_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_hr_frame), (frame_idx, zip_ref, base_folder))
+            lr_frame_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_lr_frame), (frame_idx, zip_ref, base_folder))
+            temporal_frame_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_hr_frame), (frame_idx - 1, zip_ref, base_folder))
+            hr_gbuffer_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_hr_g_buffers), (frame_idx, zip_ref, base_folder))
+            lr_gbuffer_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_lr_g_buffers), (frame_idx, zip_ref, base_folder))
+            temporal_gbuffer_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_temporal_g_buffers), (frame_idx, zip_ref, base_folder))
 
-            threads: List[threading.Thread] = []
-            threads.append(threading.Thread(target=threaded_hr_gb))
-            threads.append(threading.Thread(target=threaded_lr_gb))
-            threads.append(threading.Thread(target=threaded_temporal_gb))
-            threads.append(threading.Thread(target=threaded_hr_frame))
-            threads.append(threading.Thread(target=threaded_lr_frame))
-            threads.append(threading.Thread(target=threaded_temporal_frame))
-            for thread in threads:
-                thread.start()
-
-            for thread in threads:
-                thread.join()
-
+            res[RawFrameGroup.HR_GB] = hr_gbuffer_res.get()
+            res[RawFrameGroup.LR_GB] = lr_gbuffer_res.get()
+            res[RawFrameGroup.TEMPORAL_GB] = temporal_gbuffer_res.get()
+            res[RawFrameGroup.HR] = hr_frame_res.get()
+            res[RawFrameGroup.LR] = lr_frame_res.get()
+            res[RawFrameGroup.TEMPORAL] = temporal_frame_res.get()
 
         if self.patch_size and not no_patch:
             # Get the patch position
@@ -172,71 +155,50 @@ class WDSSDatasetCompressed(Dataset):
 
         return res
 
+    def _get_gbuffer(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str, gb_type: GB_Type, path: str) -> torch.Tensor:
+        frame: torch.Tensor = DatasetUtils.get_frame(zip_ref, base_folder + path)
+        if gb_type in GBufferChannels:
+            # frame = frame[:, :, GBufferChannels[gb_type]]
+            frame = frame[GBufferChannels[gb_type], :, :]
+        return frame
 
     def _get_hr_g_buffers(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> Dict[GB_Type, torch.Tensor]:
         res = {}
 
-        def threaded_hr_gb(gb_type: GB_Type):
-            buffer = zip_ref.read(base_folder + self._get_hr_gb_path(frame_idx, gb_type))
-            frame = ImageUtils.decode_exr_image_opencv(buffer)
-            if gb_type in GBufferChannels:
-                frame = frame[:, :, GBufferChannels[gb_type]]
-            torch_frame = torch.from_numpy(frame).permute(2, 0, 1)
-            res.update({gb_type: torch_frame})
-
-        threads: List[threading.Thread] = []
+        results: List[AsyncResult] = []
         for gb_type in GB_Type:
-            threads.append(threading.Thread(target=threaded_hr_gb, args=(gb_type,)))
-        for thread in threads:
-            thread.start()
-        for thread in threads:  
-            thread.join()
+            results.append(self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_gbuffer), (frame_idx, zip_ref, base_folder, gb_type, self._get_hr_gb_path(frame_idx, gb_type))))
+
+        for gb_type, result in zip(GB_Type, results):
+            res[gb_type] = result.get()
 
         return res
     
 
     def _get_lr_g_buffers(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> Dict[GB_Type, torch.Tensor]:
         res = {}
-        def threaded_lr_gb(gb_type: GB_Type):
-            buffer = zip_ref.read(base_folder + self._get_lr_gb_path(frame_idx, gb_type))
-            frame = ImageUtils.decode_exr_image_opencv(buffer)
-            if gb_type in GBufferChannels:
-                frame = frame[:, :, GBufferChannels[gb_type]]
-            torch_frame = torch.from_numpy(frame).permute(2, 0, 1)
-            res.update({gb_type: torch_frame})
 
-        threads: List[threading.Thread] = []
+        results: List[AsyncResult] = []
         for gb_type in GB_Type:
-            threads.append(threading.Thread(target=threaded_lr_gb, args=(gb_type,)))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
+            results.append(self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_gbuffer), (frame_idx, zip_ref, base_folder, gb_type, self._get_lr_gb_path(frame_idx, gb_type))))
+
+        for gb_type, result in zip(GB_Type, results):
+            res[gb_type] = result.get()
 
         return res
     
     def _get_temporal_g_buffers(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> Dict[GB_Type, torch.Tensor]:
         # Just need the BaseColor, Depth, and Normal
         res = {}
-        def threaded_temporal_gb(gb_type: GB_Type):
-            buffer = zip_ref.read(base_folder + self._get_hr_gb_path(frame_idx, gb_type))
-            frame = ImageUtils.decode_exr_image_opencv(buffer)
-            if gb_type in GBufferChannels:
-                frame = frame[:, :, GBufferChannels[gb_type]]
-            torch_frame = torch.from_numpy(frame).permute(2, 0, 1)
-            res.update({gb_type: torch_frame})
 
-        threads: List[threading.Thread] = []
-
+        results: List[AsyncResult] = []
         for gb_type in [GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL]:
-            threads.append(threading.Thread(target=threaded_temporal_gb, args=(gb_type,)))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        
+            results.append(self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_gbuffer), (frame_idx, zip_ref, base_folder, gb_type, self._get_hr_gb_path(frame_idx, gb_type))))
+
+        for gb_type, result in zip([GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL], results):
+            res[gb_type] = result.get()
+
         return res
-    
 
     def _get_hr_frame(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> torch.Tensor:
         buffer = zip_ref.read(base_folder + self._get_hr_frame_path(frame_idx))
@@ -429,8 +391,42 @@ class WDSSDatasetCompressed(Dataset):
         Returns:
             Tuple containing the training, validation, and test datasets.
         """
-        train_dataset = WDSSDatasetCompressed(settings.train_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor)
-        val_dataset = WDSSDatasetCompressed(settings.val_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor)
-        test_dataset = WDSSDatasetCompressed(settings.test_dir, settings.frames_per_zip, 0, settings.upscale_factor)
+        train_dataset = WDSSDatasetCompressed(settings.train_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads)
+        val_dataset = WDSSDatasetCompressed(settings.val_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads)
+        test_dataset = WDSSDatasetCompressed(settings.test_dir, settings.frames_per_zip, 0, settings.upscale_factor, num_threads = settings.num_threads)
 
         return train_dataset, val_dataset, test_dataset
+
+class DatasetUtils:
+    @staticmethod
+    def get_buffer(zip_ref: zipfile.ZipFile, file_path: str) -> bytes:
+        return zip_ref.read(file_path)
+    
+    @staticmethod
+    def get_frame_from_buffer(buffer: bytes) -> torch.Tensor:
+        frame = ImageUtils.decode_exr_image_opencv(buffer)
+        return torch.from_numpy(frame).permute(2, 0, 1)
+    
+    @staticmethod
+    def get_frame(zip_ref: zipfile.ZipFile, file_path: str) -> torch.Tensor:
+        buffer = zip_ref.read(file_path)
+        return DatasetUtils.get_frame_from_buffer(buffer)
+    
+    @staticmethod
+    def wrap_try(func):
+        def wrapper(*args, **kwargs):
+            recursion_depth = kwargs.pop('recursion_depth', 0)
+
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f'Error in {func.__name__}: {e}, depth: {recursion_depth}')
+
+                if recursion_depth > 5:
+                    return None
+
+                recursion_depth += 1
+                kwargs['recursion_depth'] = recursion_depth
+
+                return wrapper(*args, **kwargs)
+        return wrapper
