@@ -114,6 +114,18 @@ class FourierMappedINR(nn.Module):
             inp_channels = hidden_channel
         layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))  # No activation on output layer
         return nn.Sequential(*layers)
+    
+    def _make_complex_gabor_mlp(self, omega_0, sigma) -> nn.Sequential:
+        """Create the MLP network with complex Gabor activation."""
+        layers = []
+        inp_channels = self.mlp_inp_channels
+        layers.append(ComplexGaborActivation(omega_0=omega_0, sigma=sigma))
+        for hidden_channel in self.hidden_channels:
+            layers.append(nn.Conv2d(inp_channels, hidden_channel, kernel_size=1))
+            layers.append(ComplexGaborActivation(omega_0=omega_0, sigma=sigma))
+            inp_channels = hidden_channel
+        layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))
+        return nn.Sequential(*layers)
 
 class SineActivation(nn.Module):
     """Sine activation layer for SIREN with omega_0 scaling."""
@@ -124,3 +136,13 @@ class SineActivation(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Apply omega_0 scaling to the sine activation
         return torch.sin(self.omega_0 * x)
+    
+
+class ComplexGaborActivation(nn.Module):
+    def __init__(self, omega_0: float = 20.0, sigma: float = 10.0):
+        super(ComplexGaborActivation, self).__init__()
+        self.omega_0 = omega_0
+        self.sigma = sigma
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.exp(1j * self.omega_0 * x) * torch.exp(-(torch.abs(self.sigma *x)**2))
