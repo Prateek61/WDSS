@@ -127,17 +127,25 @@ class WDSSDatasetCompressed(Dataset):
             def threaded_temporal_gb():
                 temporal_gbuffers = self._get_temporal_g_buffers(frame_idx - 1, zip_ref, base_folder)
                 res.update({RawFrameGroup.TEMPORAL_GB: temporal_gbuffers})
+            def threaded_hr_frame():
+                hr_frame = self._get_hr_frame(frame_idx, zip_ref, base_folder)
+                res.update({RawFrameGroup.HR: hr_frame})
+            def threaded_lr_frame():
+                lr_frame = self._get_lr_frame(frame_idx, zip_ref, base_folder)
+                res.update({RawFrameGroup.LR: lr_frame})
+            def threaded_temporal_frame():
+                temporal_frame = self._get_hr_frame(frame_idx - 1, zip_ref, base_folder)
+                res.update({RawFrameGroup.TEMPORAL: temporal_frame})
 
             threads: List[threading.Thread] = []
             threads.append(threading.Thread(target=threaded_hr_gb))
             threads.append(threading.Thread(target=threaded_lr_gb))
             threads.append(threading.Thread(target=threaded_temporal_gb))
+            threads.append(threading.Thread(target=threaded_hr_frame))
+            threads.append(threading.Thread(target=threaded_lr_frame))
+            threads.append(threading.Thread(target=threaded_temporal_frame))
             for thread in threads:
                 thread.start()
-
-            res[RawFrameGroup.HR] = self._get_hr_frame(frame_idx, zip_ref, base_folder)
-            res[RawFrameGroup.LR] = self._get_lr_frame(frame_idx, zip_ref, base_folder)
-            res[RawFrameGroup.TEMPORAL] = self._get_hr_frame(frame_idx - 1, zip_ref, base_folder)
 
             for thread in threads:
                 thread.join()
@@ -162,36 +170,65 @@ class WDSSDatasetCompressed(Dataset):
 
     def _get_hr_g_buffers(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> Dict[GB_Type, torch.Tensor]:
         res = {}
-        for gb_type in GB_Type:
+
+        def threaded_hr_gb(gb_type: GB_Type):
             buffer = zip_ref.read(base_folder + self._get_hr_gb_path(frame_idx, gb_type))
             frame = ImageUtils.decode_exr_image_opencv(buffer)
             if gb_type in GBufferChannels:
                 frame = frame[:, :, GBufferChannels[gb_type]]
-            res[gb_type] = torch.from_numpy(frame).permute(2, 0, 1)
+            torch_frame = torch.from_numpy(frame).permute(2, 0, 1)
+            res.update({gb_type: torch_frame})
+
+        threads: List[threading.Thread] = []
+        for gb_type in GB_Type:
+            threads.append(threading.Thread(target=threaded_hr_gb, args=(gb_type,)))
+        for thread in threads:
+            thread.start()
+        for thread in threads:  
+            thread.join()
 
         return res
     
 
     def _get_lr_g_buffers(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> Dict[GB_Type, torch.Tensor]:
         res = {}
-        for gb_type in GB_Type:
+        def threaded_lr_gb(gb_type: GB_Type):
             buffer = zip_ref.read(base_folder + self._get_lr_gb_path(frame_idx, gb_type))
             frame = ImageUtils.decode_exr_image_opencv(buffer)
             if gb_type in GBufferChannels:
                 frame = frame[:, :, GBufferChannels[gb_type]]
-            res[gb_type] = torch.from_numpy(frame).permute(2, 0, 1)
+            torch_frame = torch.from_numpy(frame).permute(2, 0, 1)
+            res.update({gb_type: torch_frame})
+
+        threads: List[threading.Thread] = []
+        for gb_type in GB_Type:
+            threads.append(threading.Thread(target=threaded_lr_gb, args=(gb_type,)))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
         return res
     
     def _get_temporal_g_buffers(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str) -> Dict[GB_Type, torch.Tensor]:
         # Just need the BaseColor, Depth, and Normal
         res = {}
-        for gb_type in [GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL]:
+        def threaded_temporal_gb(gb_type: GB_Type):
             buffer = zip_ref.read(base_folder + self._get_hr_gb_path(frame_idx, gb_type))
             frame = ImageUtils.decode_exr_image_opencv(buffer)
             if gb_type in GBufferChannels:
                 frame = frame[:, :, GBufferChannels[gb_type]]
-            res[gb_type] = torch.from_numpy(frame).permute(2, 0, 1)
+            torch_frame = torch.from_numpy(frame).permute(2, 0, 1)
+            res.update({gb_type: torch_frame})
+
+        threads: List[threading.Thread] = []
+
+        for gb_type in [GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL]:
+            threads.append(threading.Thread(target=threaded_temporal_gb, args=(gb_type,)))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
         
         return res
     
@@ -249,6 +286,9 @@ class WDSSDatasetCompressed(Dataset):
 
         if self.patch_size == 0:
             return 1
+        
+        if low_resolution == (360, 640) and patch_size == 256:
+            return 5
 
         lr_h, lr_w = low_resolution
         patch_h, patch_w = patch_size, patch_size
@@ -265,6 +305,9 @@ class WDSSDatasetCompressed(Dataset):
         Returns:
             Tuple containing the patch window (y, x) for (tl, br) in LR and HR.
         """
+        if LowResolution == (360, 640) and PatchSize == 256:
+            return self._patch_window_def(patch_idx)
+
         # LR and patch size
         lr_h, lr_w = LowResolution
         patch_h, patch_w = PatchSize, PatchSize
@@ -293,6 +336,49 @@ class WDSSDatasetCompressed(Dataset):
         hr_patch_x_tl = patch_x * UpscaleFactor
         hr_patch_y_br = hr_patch_y_tl + patch_h * UpscaleFactor
         hr_patch_x_br = hr_patch_x_tl + patch_w * UpscaleFactor
+
+        lr_window = ((patch_y, patch_x), (patch_y + patch_h, patch_x + patch_w))
+        hr_window = ((hr_patch_y_tl, hr_patch_x_tl), (hr_patch_y_br, hr_patch_x_br))
+        return lr_window, hr_window
+
+    def _patch_window_def(self, patch_idx: int) -> Tuple[Tuple[Tuple[int, int], Tuple[int, int]], Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """Patch window for resolution 360x640 and patch size 256 and upscale factor 2
+        """
+
+        lr_h, lr_w = 360, 640
+        patch_h, patch_w = 256, 256
+        num_patches_h = 2
+        num_patches_w = 2
+        upscale_factor = 2
+
+        h_window = lr_h - patch_h
+        w_window = lr_w - patch_w
+
+        if patch_idx == 0:
+            patch_y, patch_x = h_window * 0.1, w_window * 0.1
+        elif patch_idx == 1:
+            patch_y, patch_x = h_window * 0.1, (lr_w - patch_w) - w_window * 0.1
+        elif patch_idx == 2:
+            patch_y, patch_x = (lr_h - patch_h) - h_window * 0.1, w_window * 0.1
+        elif patch_idx == 3:
+            patch_y, patch_x = (lr_h - patch_h) - h_window * 0.1, (lr_w - patch_w) - w_window * 0.1
+        elif patch_idx == 4:
+            patch_y, patch_x = h_window // 2, w_window // 2
+        else:
+            raise ValueError('Invalid patch index')
+        
+        # Patch can move 30% of the lr_h and lr_w in the y and x direction
+        patch_y += randint(-int(h_window * 0.15), int(h_window * 0.15))
+        patch_x += randint(-int(w_window * 0.15), int(w_window * 0.15))
+
+        # Clip the patch to the frame
+        patch_y = int(min(max(patch_y, 0), lr_h - patch_h))
+        patch_x = int(min(max(patch_x, 0), lr_w - patch_w))
+
+        hr_patch_y_tl = patch_y * upscale_factor
+        hr_patch_x_tl = patch_x * upscale_factor
+        hr_patch_y_br = hr_patch_y_tl + patch_h * upscale_factor
+        hr_patch_x_br = hr_patch_x_tl + patch_w * upscale_factor
 
         lr_window = ((patch_y, patch_x), (patch_y + patch_h, patch_x + patch_w))
         hr_window = ((hr_patch_y_tl, hr_patch_x_tl), (hr_patch_y_br, hr_patch_x_br))
