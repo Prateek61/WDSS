@@ -29,7 +29,10 @@ class ModelUtils:
         checkpoint = torch.load(checkpoint_path, weights_only=True)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         step = checkpoint['step']
         validation_loss = checkpoint['validation_loss']
+        try:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        except:
+            pass
         return step, validation_loss
