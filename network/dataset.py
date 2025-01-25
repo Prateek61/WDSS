@@ -64,12 +64,13 @@ class WDSSDatasetCompressed(Dataset):
         'LR_GB_FOLDER': 'LowResGBuffer'
     }
 
-    def __init__(self, root_dir: str, frames_per_zip: int, patch_size: int = 0, upscale_factor: int = 2):
+    def __init__(self, root_dir: str, frames_per_zip: int, patch_size: int = 0, upscale_factor: int = 2, multi_patches_per_frame: bool = False):
         self.root_dir = root_dir
         self.frames_per_zip = frames_per_zip
         self.compressed_files = os.listdir(root_dir)
         self.patch_size = patch_size
         self.upscale_factor = upscale_factor
+        self.multi_patches_per_frame = multi_patches_per_frame
 
         self.patches_per_frame = self._patches_per_frame((360, 640), patch_size)
         self.total_frames = len(self.compressed_files) * self.patches_per_frame * frames_per_zip
@@ -291,6 +292,9 @@ class WDSSDatasetCompressed(Dataset):
         if self.patch_size == 0:
             return 1
         
+        if not self.multi_patches_per_frame:
+            return 1
+        
         if low_resolution == (360, 640) and patch_size == 256:
             return 5
 
@@ -309,6 +313,32 @@ class WDSSDatasetCompressed(Dataset):
         Returns:
             Tuple containing the patch window (y, x) for (tl, br) in LR and HR.
         """
+        if not self.multi_patches_per_frame:
+            lr_h, lr_w = LowResolution
+            patch_h, patch_w = PatchSize, PatchSize
+
+            # Number of patches in the image
+            num_patches_h = (lr_h // patch_h) + 1
+            num_patches_w = (lr_w // patch_w) + 1
+
+            # Randomly select a patch
+            patch_idx_y = randint(0, num_patches_h - 1)
+            patch_idx_x = randint(0, num_patches_w - 1)
+
+            # Get the patch window
+            patch_y = min(patch_idx_y * (lr_h // num_patches_h), lr_h - patch_h)
+            patch_x = min(patch_idx_x * (lr_w // num_patches_w), lr_w - patch_w) 
+
+            hr_patch_y_tl = patch_y * UpscaleFactor
+            hr_patch_x_tl = patch_x * UpscaleFactor
+            hr_patch_y_br = hr_patch_y_tl + patch_h * UpscaleFactor
+            hr_patch_x_br = hr_patch_x_tl + patch_w * UpscaleFactor
+
+            lr_window = ((patch_y, patch_x), (patch_y + patch_h, patch_x + patch_w))
+            hr_window = ((hr_patch_y_tl, hr_patch_x_tl), (hr_patch_y_br, hr_patch_x_br))
+            return lr_window, hr_window
+
+
         if LowResolution == (360, 640) and PatchSize == 256:
             return self._patch_window_def(patch_idx)
 
