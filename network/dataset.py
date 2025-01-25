@@ -76,7 +76,11 @@ class WDSSDatasetCompressed(Dataset):
 
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        raw_frames = self._get_raw_frames(idx)
+        try:
+            raw_frames = self._get_raw_frames(idx)
+        except Exception as e:
+            print(f'Error in getting raw frames: {e}')
+            return self.__getitem__(idx)
 
         res: Dict[str, torch.Tensor] = {}
 
