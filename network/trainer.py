@@ -323,6 +323,7 @@ class Trainer:
 
         ModelUtils.save_checkpoint(self.model, 
                                    self.optimizer, 
+                                   self.scheduler,
                                    self.total_epochs, 
                                    float('inf'),
                                    os.path.join(self.settings.model_path(), file_name))
@@ -334,6 +335,7 @@ class Trainer:
 
         total_epochs, validation_loss = ModelUtils.load_checkpoint(self.model, 
                                                                    self.optimizer, 
+                                                                     self.scheduler,
                                                                    os.path.join(self.settings.model_path(), file_name))
         self.total_epochs = total_epochs
         self.best_validation_loss = validation_loss
