@@ -166,7 +166,7 @@ class Trainer:
             self._batch_losses_all = {}
 
             # Setup threading for training
-            train_thread = threading.Thread(target=self._train_batch, args=())
+            train_thread = threading.Thread(target=DatasetUtils.wrap_try(self._train_batch), args=())
             train_thread.start()
             
             # Get the total number of batches
@@ -199,7 +199,7 @@ class Trainer:
                     progress_bar.set_postfix_str(f'Loss: {(train_epoch_loss / i):.4f}')
 
                 # Start the next batch
-                train_thread = threading.Thread(target=self._train_batch, args=(batch,))
+                train_thread = threading.Thread(target=DatasetUtils.wrap_try(self._train_batch), args=(batch,))
                 train_thread.start()
 
 
@@ -232,7 +232,7 @@ class Trainer:
             self._batch_losses_all = {}
 
             # Setup threading for validation
-            validation_thread = threading.Thread(target=self._validate_batch, args=())
+            validation_thread = threading.Thread(target=DatasetUtils.wrap_try(self._validate_batch), args=())
             validation_thread.start()
 
             # Losses for validation
@@ -265,7 +265,7 @@ class Trainer:
                     progress_bar.set_postfix_str(f'Loss: {(val_epoch_loss / i):.4f}')
 
                 # Start the next batch
-                validation_thread = threading.Thread(target=self._validate_batch, args=(batch,))
+                validation_thread = threading.Thread(target=DatasetUtils.wrap_try(self._validate_batch), args=(batch,))
                 validation_thread.start()
 
             # Wait for the last batch to finish validation

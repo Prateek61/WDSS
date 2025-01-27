@@ -81,27 +81,27 @@ class WDSSDatasetCompressed(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         try:
             raw_frames = self._get_raw_frames(idx)
+
+            res: Dict[str, torch.Tensor] = {}
+
+            res[FrameGroup.HR.value] = raw_frames[RawFrameGroup.HR]
+            res[FrameGroup.LR.value] = raw_frames[RawFrameGroup.LR]
+            res[FrameGroup.TEMPORAL.value] = raw_frames[RawFrameGroup.TEMPORAL]
+
+            gb: torch.Tensor = raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR]
+            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NoV]], dim=0)
+            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.DEPTH]], dim=0)
+            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL]], dim=0)
+            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC]], dim=0)
+            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.ROUGHNESS]], dim=0)
+            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.SPECULAR]], dim=0)
+
+            res[FrameGroup.GB.value] = gb
+
+            return res
         except Exception as e:
             print(f'Error in getting raw frames: {e}')
             return self.__getitem__(idx)
-
-        res: Dict[str, torch.Tensor] = {}
-
-        res[FrameGroup.HR.value] = raw_frames[RawFrameGroup.HR]
-        res[FrameGroup.LR.value] = raw_frames[RawFrameGroup.LR]
-        res[FrameGroup.TEMPORAL.value] = raw_frames[RawFrameGroup.TEMPORAL]
-
-        gb: torch.Tensor = raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR]
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NoV]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.DEPTH]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.ROUGHNESS]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.SPECULAR]], dim=0)
-
-        res[FrameGroup.GB.value] = gb
-
-        return res
 
 
     def _get_raw_frames(self, frame_no: int, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]:
