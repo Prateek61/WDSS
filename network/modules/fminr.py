@@ -6,6 +6,7 @@ import numpy as np
 
 from utils.utils import make_coord
 from utils.image_utils import ImageUtils
+from .wire_conv2d import ComplexGaborConv2d, WIREINR_Conv2D
 
 from typing import List
 
@@ -32,7 +33,7 @@ class FourierMappedINR(nn.Module):
         self.freq_conv = nn.Conv2d(gb_feat_c, mlp_inp_channels, kernel_size=3, padding=1)
         self.phase_conv = nn.Conv2d(1, mlp_inp_channels//2, kernel_size=1, bias=False)
 
-        self.mlp = self._make_complex_gabor_mlp()
+        self.mlp = WIREINR_Conv2D(mlp_inp_channels, out_channels, hidden_layers=hidden_channels)
     
     def forward(self, lr_feat: torch.Tensor, gb_feat: torch.Tensor, upscale_factor: float = 2.0) -> torch.Tensor:
         """Forward pass of the Fourier mapped INR module.
@@ -119,13 +120,16 @@ class FourierMappedINR(nn.Module):
         """Create the MLP network with complex Gabor activation."""
         layers = []
         inp_channels = self.mlp_inp_channels
-        # layers.append(ComplexGaborActivation(omega_0=omega_0, sigma=sigma))
-        for hidden_channel in self.hidden_channels:
-            layers.append(nn.Conv2d(inp_channels, hidden_channel, kernel_size=1))
-            layers.append(ComplexGaborActivation(omega_0=omega_0, sigma=sigma))
+        # enumerate hidden channels
+        for i, hidden_channel in enumerate(self.hidden_channels):
+            layers.append(ComplexGaborConv2d(inp_channels, hidden_channel, kernel_size=1, omega0=omega_0, sigma0=sigma, is_first=True if i == 0 else False))
             inp_channels = hidden_channel
-        layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))
+        layers.append(
+            nn.Conv2d(inp_channels, self.out_channels, kernel_size=1, dtype=torch.cfloat)
+        )
+
         return nn.Sequential(*layers)
+
 
 class SineActivation(nn.Module):
     """Sine activation layer for SIREN with omega_0 scaling."""
