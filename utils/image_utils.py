@@ -170,6 +170,65 @@ class ImageUtils:
         plt.axis('off')
         plt.show()
 
+    @staticmethod
+    def display_image_scale(image: Image.Image | torch.Tensor | np.ndarray, title: str = "", normalize: bool = True) -> None:
+        """Display an image using matplotlib with a given scale.
+        """
+        # Initialize statistics
+        min_val = max_val = mean_val = std_val = None
+
+        # If the input is a torch tensor, convert to numpy
+        if isinstance(image, torch.Tensor):
+            min_val = torch.min(image).item()
+            max_val = torch.max(image).item()
+            mean_val = torch.mean(image).item()
+            std_val = torch.std(image).item()
+            image = ImageUtils.tensor_to_opencv_image(image)
+
+        # Check if the input is a numpy array
+        if isinstance(image, np.ndarray):
+            # Normalize the image
+            if normalize:
+                image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                image = np.clip(image, 0, 255)
+            else:
+                # Clip the pixel values to [0, 1]
+                image = np.clip(image, 0.0, 1.0)
+            try:
+                channels = image.shape[2]
+            except:
+                channels = 1
+        else:
+            raise ValueError("Input image must be a torch.Tensor or numpy.ndarray")
+        
+
+        
+        fig, ax = plt.subplots()
+
+        # Display the image
+        if channels == 1:  # If single channel, display in grayscale
+            im = ax.imshow(image, cmap='gray')
+        else:  # Else display in color
+            if channels == 2:
+                # Add an extra B channel with zeros
+                image = cv2.merge((image, np.zeros_like(image[:, :, 0])))
+            im = ax.imshow(image)
+
+        # Add a vertical color bar with min and max values
+        cbar = fig.colorbar(im, ax=ax, orientation='vertical')
+        cbar.set_label("Pixel Intensity")
+
+        # Append the ticks (and their labels) for minimum and the maximum value
+        cbar.set_ticks([min_val, max_val] )
+        cbar.set_ticklabels([min_val, max_val])
+        
+
+        # Set title and remove axes
+        ax.set_title(title)
+        ax.axis('off')
+        plt.tight_layout()  # Adjust layout to avoid overlap
+        plt.show()
+
 
     @staticmethod
     def display_images(images: List[torch.Tensor | Image.Image | np.ndarray], titles: List[str] = [], normalize: bool = True) -> None:
