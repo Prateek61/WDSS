@@ -32,7 +32,7 @@ class FourierMappedINR(nn.Module):
         self.freq_conv = nn.Conv2d(gb_feat_c, mlp_inp_channels, kernel_size=3, padding=1)
         self.phase_conv = nn.Conv2d(1, mlp_inp_channels//2, kernel_size=1, bias=False)
 
-        self.mlp = self._make_siren_mlp(omega_0=30.0)
+        self.mlp = self._make_complex_gabor_mlp()
     
     def forward(self, lr_feat: torch.Tensor, gb_feat: torch.Tensor, upscale_factor: float = 2.0) -> torch.Tensor:
         """Forward pass of the Fourier mapped INR module.
@@ -114,6 +114,18 @@ class FourierMappedINR(nn.Module):
             inp_channels = hidden_channel
         layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))  # No activation on output layer
         return nn.Sequential(*layers)
+    
+    def _make_complex_gabor_mlp(self, omega_0: float = 20.0, sigma: float = 10.0) -> nn.Sequential:
+        """Create the MLP network with complex Gabor activation."""
+        layers = []
+        inp_channels = self.mlp_inp_channels
+        # layers.append(ComplexGaborActivation(omega_0=omega_0, sigma=sigma))
+        for hidden_channel in self.hidden_channels:
+            layers.append(nn.Conv2d(inp_channels, hidden_channel, kernel_size=1))
+            layers.append(ComplexGaborActivation(omega_0=omega_0, sigma=sigma))
+            inp_channels = hidden_channel
+        layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))
+        return nn.Sequential(*layers)
 
 class SineActivation(nn.Module):
     """Sine activation layer for SIREN with omega_0 scaling."""
@@ -124,3 +136,13 @@ class SineActivation(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Apply omega_0 scaling to the sine activation
         return torch.sin(self.omega_0 * x)
+    
+class ComplexGaborActivation(nn.Module):
+    def __init__(self, omega_0: float = 20.0, sigma: float = 10.0):
+        super(ComplexGaborActivation, self).__init__()
+        self.omega_0 = omega_0
+        self.sigma = sigma
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.exp(1j * self.omega_0 * x) * torch.exp(-(torch.abs(self.sigma *x)**2))
+    
