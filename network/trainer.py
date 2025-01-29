@@ -63,7 +63,7 @@ class Trainer:
         self.optimizer.zero_grad()
 
         # Forward pass
-        wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp)
+        wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
         # Calculate the loss
         total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
@@ -99,7 +99,7 @@ class Trainer:
 
         # Forward pass
         with torch.no_grad():
-            wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp)
+            wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
             # Calculate the loss
             total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)

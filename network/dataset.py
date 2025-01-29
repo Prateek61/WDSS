@@ -13,6 +13,7 @@ import numpy as np
 from utils.wavelet import WaveletProcessor
 from config import Settings
 from multiprocessing.pool import ThreadPool, AsyncResult
+from utils.masks import Mask
 
 import threading
 
@@ -57,6 +58,47 @@ class FrameGroup(Enum):
     GB = 'GB'
     TEMPORAL = 'TEMPORAL'
 
+class DatasetUtils:
+    @staticmethod
+    def get_buffer(zip_ref: zipfile.ZipFile, file_path: str) -> bytes:
+        return zip_ref.read(file_path)
+    
+    @staticmethod
+    def get_frame_from_buffer(buffer: bytes) -> torch.Tensor:
+        frame = ImageUtils.decode_exr_image_opencv(buffer)
+        return torch.from_numpy(frame).permute(2, 0, 1)
+    
+    @staticmethod
+    def get_frame(zip_ref: zipfile.ZipFile, file_path: str) -> torch.Tensor:
+        buffer = zip_ref.read(file_path)
+        return DatasetUtils.get_frame_from_buffer(buffer)
+    
+    @staticmethod
+    def wrap_try(func):
+        def wrapper(*args, **kwargs):
+            recursion_depth = kwargs.pop('recursion_depth', 0)
+
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f'Error in {func.__name__}: {e}, depth: {recursion_depth}')
+
+                if recursion_depth > 5:
+                    return None
+
+                recursion_depth += 1
+                kwargs['recursion_depth'] = recursion_depth
+
+                return wrapper(*args, **kwargs)
+        return wrapper
+
+class WDSSDatasetBase(Dataset):
+    def __init__(self):
+        super(WDSSDatasetBase, self).__init__()
+
+    def __getitem__(self, index):
+        raise NotImplementedError
+
 class WDSSDatasetCompressed(Dataset):
     FRAME_PATHS = {
         'HR_FOLDER': 'HighRes',
@@ -72,37 +114,54 @@ class WDSSDatasetCompressed(Dataset):
         self.patch_size = patch_size
         self.upscale_factor = upscale_factor
         self.multi_patches_per_frame = multi_patches_per_frame
+        print(num_threads)
         self.thread_pool = ThreadPool(max(num_threads, 4))
 
         self.patches_per_frame = self._patches_per_frame((360, 640), patch_size)
         self.total_frames = len(self.compressed_files) * self.patches_per_frame * frames_per_zip
 
-
+    @DatasetUtils.wrap_try
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        try:
-            raw_frames = self._get_raw_frames(idx)
+        raw_frames = self._get_raw_frames(idx)
 
-            res: Dict[str, torch.Tensor] = {}
+        res: Dict[str, torch.Tensor] = {}
 
-            res[FrameGroup.HR.value] = raw_frames[RawFrameGroup.HR]
-            res[FrameGroup.LR.value] = raw_frames[RawFrameGroup.LR]
-            res[FrameGroup.TEMPORAL.value] = raw_frames[RawFrameGroup.TEMPORAL]
+        res[FrameGroup.HR.value] = raw_frames[RawFrameGroup.HR]
+        res[FrameGroup.LR.value] = raw_frames[RawFrameGroup.LR]
+        
+        spatial_mask, temporal_mask = Mask.spatial_and_temporal_mask(
+            hr_base_color=raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR].unsqueeze(0),
+            hr_normal=raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL].unsqueeze(0),
+            hr_depth=raw_frames[RawFrameGroup.HR_GB][GB_Type.DEPTH].unsqueeze(0),
+            lr_base_color=raw_frames[RawFrameGroup.LR_GB][GB_Type.BASE_COLOR].unsqueeze(0),
+            lr_normal=raw_frames[RawFrameGroup.LR_GB][GB_Type.NORMAL].unsqueeze(0),
+            lr_depth=raw_frames[RawFrameGroup.LR_GB][GB_Type.DEPTH].unsqueeze(0),
+            motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_Type.MOTION_VECTOR].unsqueeze(0),
+            temporal_hr_base_color=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.BASE_COLOR].unsqueeze(0),
+            temporal_hr_normal=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NORMAL].unsqueeze(0),
+            temporal_hr_depth=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DEPTH].unsqueeze(0),
+            upscale_factor=2, 
+            spatial_threasholds={
+                'depth': 0.04,
+                'normal': 0.4,
+                'albedo': 0.1
+            }
+        )
 
-            gb: torch.Tensor = raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR]
-            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NoV]], dim=0)
-            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.DEPTH]], dim=0)
-            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL]], dim=0)
-            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC]], dim=0)
-            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.ROUGHNESS]], dim=0)
-            gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.SPECULAR]], dim=0)
+        gb: torch.Tensor = raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR]
+        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NoV]], dim=0)
+        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.DEPTH]], dim=0)
+        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL]], dim=0)
+        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC]], dim=0)
+        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.ROUGHNESS]], dim=0)
+        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.SPECULAR]], dim=0)
+        gb = torch.cat([gb, spatial_mask.squeeze(0)], dim=0)
+        res[FrameGroup.GB.value] = gb
 
-            res[FrameGroup.GB.value] = gb
+        warped_temporal = Mask.warp_frame(frame=raw_frames[RawFrameGroup.TEMPORAL].unsqueeze(0), motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_Type.MOTION_VECTOR].unsqueeze(0))
+        res[FrameGroup.TEMPORAL.value] = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
 
-            return res
-        except Exception as e:
-            print(f'Error in getting raw frames: {e}')
-            return self.__getitem__(idx)
-
+        return res
 
     def _get_raw_frames(self, frame_no: int, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]:
         """Returns raw frame patches.
@@ -396,37 +455,3 @@ class WDSSDatasetCompressed(Dataset):
         test_dataset = WDSSDatasetCompressed(settings.test_dir, settings.frames_per_zip, 0, settings.upscale_factor, num_threads = settings.num_threads)
 
         return train_dataset, val_dataset, test_dataset
-
-class DatasetUtils:
-    @staticmethod
-    def get_buffer(zip_ref: zipfile.ZipFile, file_path: str) -> bytes:
-        return zip_ref.read(file_path)
-    
-    @staticmethod
-    def get_frame_from_buffer(buffer: bytes) -> torch.Tensor:
-        frame = ImageUtils.decode_exr_image_opencv(buffer)
-        return torch.from_numpy(frame).permute(2, 0, 1)
-    
-    @staticmethod
-    def get_frame(zip_ref: zipfile.ZipFile, file_path: str) -> torch.Tensor:
-        buffer = zip_ref.read(file_path)
-        return DatasetUtils.get_frame_from_buffer(buffer)
-    
-    @staticmethod
-    def wrap_try(func):
-        def wrapper(*args, **kwargs):
-            recursion_depth = kwargs.pop('recursion_depth', 0)
-
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                print(f'Error in {func.__name__}: {e}, depth: {recursion_depth}')
-
-                if recursion_depth > 5:
-                    return None
-
-                recursion_depth += 1
-                kwargs['recursion_depth'] = recursion_depth
-
-                return wrapper(*args, **kwargs)
-        return wrapper

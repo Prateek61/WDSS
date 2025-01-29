@@ -2,7 +2,7 @@ import torch
 import json
 import os
 
-from typing import List, Dict
+from typing import List, Dict, Any
 
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -27,8 +27,9 @@ class Settings:
         self.model_save_interval: int = settings["model_save_interval"] # Save model every x epochs
         self.output_interval: int = settings["output_interval"] # Save output every x epochs
         self.upscale_factor: int = settings["upscale_factor"]
-        self.multi_patches_per_frame: bool = settings.get("multi_patches_per_frame", False)
-        self.num_threads: int = settings.get("num_threads", 8)
+        self.multi_patches_per_frame: bool = settings["multi_patches_per_frame"]
+        self.num_threads: int = settings['num_threads']
+        self.model_config: Dict[str, Any] = settings["model_config"]
 
     def get_full_path(self, folder: str) -> str:
         return os.path.join(self.out_dir, f'{self.job_name}-{self.model_name}', folder)
