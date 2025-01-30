@@ -10,7 +10,7 @@ class ModelBase(nn.Module, ABC):
         super(ModelBase, self).__init__()
 
     @abstractmethod
-    def forward(self, lr_frame: torch.Tensor, hr_gbuffer: torch.Tensor, temporal: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, lr_frame: torch.Tensor, hr_gbuffer: torch.Tensor, temporal: torch.Tensor, upscale_factor: float) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass of the model
 
         Args:

@@ -17,7 +17,7 @@ def make_coord(shape: Tuple[int, int], device: torch.device, ranges = None, flat
         seq = v0 + r + (2 * r) * torch.arange(n, device=device).float()
         coord_seqs.append(seq)
 
-    ret = torch.stack(torch.meshgrid(*coord_seqs), dim=-1)
+    ret = torch.stack(torch.meshgrid(*coord_seqs, indexing='ij'), dim=-1)
     if flatten:
         ret = ret.view(-1, ret.shape[-1])
 
