@@ -35,7 +35,7 @@ class ImageUtils:
             assert False, "Input must be a 4D tensor"
             
         # Perform upsampling
-        res = F.interpolate(input, scale_factor=scale_factor, mode='bilinear', align_corners=False)
+        res = F.interpolate(input, scale_factor=scale_factor, mode=mode, align_corners=False)
         return res
 
     

@@ -177,3 +177,35 @@ class Mask:
         # Concatenate the masks
         temporal_mask = torch.cat([albedo_mask, depth_mask, normal_mask], dim=1)
         return temporal_mask
+
+    @staticmethod
+    def brdf_demodulate(
+        frame: torch.Tensor,
+        brdf_map: torch.Tensor
+    ) -> torch.Tensor:
+        """Demodulate the frame using the BRDF map.
+        """
+
+        pos = (brdf_map <= 1e-6)
+        brdf_map[pos] = 1.0
+        demodulated_frame = frame / brdf_map
+        demodulated_frame[pos] = frame[pos]
+        brdf_map[pos] = 0.0
+
+        return demodulated_frame
+
+    @staticmethod
+    def brdf_remodulate(
+        frame: torch.Tensor,
+        brdf_map: torch.Tensor
+    ) -> torch.Tensor:
+        """Remodulate the frame using the BRDF map.
+        """
+
+        pos = (brdf_map <= 1e-6)
+        brdf_map[pos] = 1.0
+        remodulated_frame = frame * brdf_map
+        brdf_map[pos] = 0.0
+
+        return remodulated_frame
+        

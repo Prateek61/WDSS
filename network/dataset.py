@@ -114,7 +114,6 @@ class WDSSDatasetCompressed(Dataset):
         self.patch_size = patch_size
         self.upscale_factor = upscale_factor
         self.multi_patches_per_frame = multi_patches_per_frame
-        print(num_threads)
         self.thread_pool = ThreadPool(max(num_threads, 4))
 
         self.patches_per_frame = self._patches_per_frame((360, 640), patch_size)
