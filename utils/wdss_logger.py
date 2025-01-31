@@ -1,32 +1,77 @@
 from torch.utils.tensorboard import SummaryWriter
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 import os
-import time
-from ast import Constant
+from typing import Dict, List, Tuple
 
-from typing import Dict
-
-# Logger that logs network details like loss, accuracy, etc. to a file
 class NetworkLogger:
     def __init__(self, log_path: str):
         self.log_path = log_path
-
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
-
         self.writer = SummaryWriter(log_path)
         self.writers: Dict[str, SummaryWriter] = {}
+        
+        # Cache for scalar and image data
+        self.cached_scalars = {}
+        self.cached_images = {}
 
-
-    def log_scalar(self, tag, scalar_value, global_step, component_name : Constant = "") -> None:
+    def log_scalar(self, tag: str, scalar_value: float, global_step: int, component_name: str = "") -> None:
         self.get_writer(component_name).add_scalar(tag, scalar_value, global_step)
 
-    def log_scalars(self, main_tag, tag_scalar_dict, global_step, component_name : Constant = "") -> None:
+    def log_scalars(self, main_tag: str, tag_scalar_dict: Dict[str, float], global_step: int, component_name: str = "") -> None:
         self.get_writer(component_name).add_scalars(main_tag, tag_scalar_dict, global_step)
 
-    def log_image(self, tag, img_tensor, global_step, component_name: Constant = "") -> None:
+    def log_image(self, tag: str, img_tensor, global_step: int, component_name: str = "") -> None:
         self.get_writer(component_name).add_image(tag, img_tensor, global_step)
 
+    def get_scalars_from_path(self, path: str) -> Dict[str, List[Tuple[int, float]]]:
+        if path in self.cached_scalars:
+            return self.cached_scalars[path]
+        
+        event_acc = EventAccumulator(path)
+        event_acc.Reload()
+        scalars = self._get_scalars(event_acc)
+        self.cached_scalars[path] = scalars
+        return scalars
 
-    def get_writer(self, component_name: Constant = "") -> SummaryWriter:
+    def get_image_tags(self, path: str) -> List[str]:
+        # Only cache image tags once to avoid redundant reloading
+        if path not in self.cached_images:
+            event_acc = EventAccumulator(path, size_guidance={'images': 0})
+            event_acc.Reload()
+            self.cached_images[path] = self._get_image_tags(event_acc)
+        return self.cached_images[path]
+    
+    def get_images_by_tag(self, path: str, tag: str) -> List[Tuple[int, bytes]]:
+        cache_key = f"{path}_{tag}"
+        if cache_key in self.cached_images:
+            return self.cached_images[cache_key]
+        
+        event_acc = EventAccumulator(path, size_guidance={'images': 0})
+        event_acc.Reload()
+        images = self._get_images_by_tag(event_acc, tag)
+        self.cached_images[cache_key] = images
+        return images
+
+    def _get_scalars(self, event_acc: EventAccumulator) -> Dict[str, List[Tuple[int, float]]]:
+        tags = event_acc.Tags()['scalars']
+        data = {}
+        for tag in tags:
+            data[tag] = [(s.step, s.value) for s in event_acc.Scalars(tag)]        
+        return data
+    
+    def _get_image_tags(self, event_acc: EventAccumulator) -> List[str]:
+        tags = event_acc.Tags()
+        return tags.get("images", [])
+    
+    def _get_images_by_tag(self, event_acc: EventAccumulator, tag: str) -> List[Tuple[int, bytes]]:
+        image_tags = event_acc.Tags().get("images", [])
+        if tag not in image_tags:
+            print(f"Tag '{tag}' not found in logs.")
+            return []
+        image_events = event_acc.Images(tag)
+        return [(img.step, img.encoded_image_string) for img in image_events]
+
+    def get_writer(self, component_name: str = "") -> SummaryWriter:
         if component_name == "":
             return self.writer
 

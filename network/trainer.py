@@ -3,6 +3,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 import threading
+import matplotlib.pyplot as plt
 
 from .model_utils import ModelUtils
 from .losses import CriterionBase
@@ -11,6 +12,9 @@ from .dataset import *
 from utils.wdss_logger import NetworkLogger
 from utils.wavelet import WaveletProcessor
 from config import device, Settings
+
+from enum import Enum
+import io
 
 from typing import Dict, Tuple
 
@@ -124,7 +128,7 @@ class Trainer:
 
             self.model.eval()
             with torch.no_grad():
-                wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp)
+                wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp , 2.0)
 
             self.log_image(img[0].detach().cpu(), f'pred_{i}', step)
             self.log_wavelet(wavelet[0].detach().cpu(), f'wavelet_pred_{i}', step)
@@ -219,6 +223,8 @@ class Trainer:
             progress_bar.set_postfix_str(f'Loss: {(train_epoch_loss / num_batches):.4f}')
             # Close the progress bar
             progress_bar.close()
+                        
+            self.logger.log_scalar("total_train_loss", train_epoch_loss , self.total_epochs)
 
             # Update the losses to be the average
             for key in train_epoch_losses:
@@ -275,6 +281,10 @@ class Trainer:
             # Update the losses and the progress bar
             # Updade the final loss
             val_epoch_loss += self._batch_loss
+
+            # Log the validation total losses
+            self.logger.log_scalar("total_val_loss", val_epoch_loss , self.total_epochs)
+            
             # Update the total losses
             for key in self._batch_losses_all:
                 val_epoch_losses[key] = val_epoch_losses.get(key, 0.0) + self._batch_losses_all[key]
@@ -294,7 +304,7 @@ class Trainer:
             # Increment the total epochs
             self.total_epochs += 1
 
-            # Log the losses
+            # Log the avg losses
             self.log_losses(train_epoch_loss, train_epoch_losses, val_epoch_loss, val_epoch_losses, self.total_epochs)
             
             # Log the test images
@@ -355,6 +365,7 @@ class Trainer:
         self.logger.log_scalars('loss', {'train': train_loss, 'val': val_loss}, step)
         for key in all_train_losses:
             self.logger.log_scalars(f'loss_{key}', {'train': all_train_losses[key], 'val': all_val_losses[key]}, step)
+        
 
 
     def log_image(self, img: torch.Tensor, tag: str = "", step: int | None = None):
@@ -394,3 +405,98 @@ class Trainer:
         wavelet_img[:, h:, w:] = horizontal
 
         self.logger.log_image(tag, wavelet_img, step)
+
+    def get_saved_losses(self) -> Tuple[float, Dict[str, float], float, Dict[str, float]]:
+        """Get the saved losses.
+        """
+
+        losses = os.listdir(self.settings.log_path())
+        # Get only folder
+        losses = [loss for loss in losses if os.path.isdir(os.path.join(self.settings.log_path(), loss))]
+        return losses
+
+    def get_loss_data(self, loss_folder: str) -> Tuple[float, Dict[str, float], float, Dict[str, float]]:
+        """Get the loss data from the file.
+        """
+
+        loss_file = os.listdir(os.path.join(self.settings.log_path(), loss_folder))[0]
+        loss_path = os.path.join(self.settings.log_path(), loss_folder, loss_file)
+        
+        return self.logger.get_scalars_from_path(loss_path)
+    
+    def get_image_data(self) -> Dict[str, list]:
+        """Get the image data from the file.
+        """
+        image_path = os.listdir(self.settings.log_path())
+        # Get only folder
+        
+        image_path = [image for image in image_path if os.path.isfile(os.path.join(self.settings.log_path(), image))]
+        
+        path = os.path.join(self.settings.log_path(), image_path[0])
+        
+        return self.logger.get_image_tags(path)
+    
+    
+    
+    def visualize_losses(self, loss: str):
+        """Visualize the loss data."""
+        
+        # Fetch loss data
+        train_losses = self.get_loss_data(loss + '_train')
+        val_losses = self.get_loss_data(loss + '_val')
+
+        # Ensure the loss key exists in the dictionaries
+        if loss not in train_losses or loss not in val_losses:
+            print(f"Loss key '{loss}' not found in data.")
+            return
+
+        # Extract step and loss values
+        train_steps, train_values = zip(*train_losses[loss]) if train_losses[loss] else ([], [])
+        val_steps, val_values = zip(*val_losses[loss]) if val_losses[loss] else ([], [])
+
+        # Plot the losses
+        plt.figure(figsize=(8, 5))
+        plt.plot(train_steps, train_values, label='Train Loss', marker='o', linestyle='-')
+        plt.plot(val_steps, val_values, label='Validation Loss', marker='s', linestyle='--')
+        
+        # Labels and title
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.title(f'Graph for {loss}')
+        plt.legend()
+        plt.grid(True)
+        
+        # Show the plot
+        plt.show()
+        
+    def visualize_image(self, tag: str , step : int) :
+        """Visualize the image data."""
+        
+        # Fetch image data
+        images = self.get_image_data()
+        
+        # Ensure the tag exists in the list
+        if tag not in images:
+            print(f"Tag '{tag}' not found in data.")
+            return
+        
+        # Get the images for the tag
+        image_data = self.logger.get_images_by_tag(self.settings.log_path(), tag)
+        
+        # Filter images by step
+        image_data = [img for img in image_data if img[0] == step]
+        
+        # Ensure images are found
+        if not image_data:
+            print(f"No images found for tag '{tag}' at step {step}.")
+            return
+        
+        # Display the images
+        for i, (step, img) in enumerate(image_data):
+            plt.figure(figsize=(8, 5))
+            plt.imshow(plt.imread(io.BytesIO(img)))
+            plt.title(f'{tag} at step {step}')
+            plt.axis('off')
+            plt.show()
+
+        
