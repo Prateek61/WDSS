@@ -129,6 +129,17 @@ class FourierMappedINR(nn.Module):
         )
 
         return nn.Sequential(*layers)
+    
+    def _make_bspline_mlp(self, scale: torch.Tensor) -> nn.Sequential:
+        """Create the MLP network with BSpline activation."""
+        layers = []
+        inp_channels = self.mlp_inp_channels
+        for  hidden_channel in self.hidden_channels:
+            layers.append(BSplineWavelet(scale=scale))
+            layers.append(nn.Conv2d(inp_channels, hidden_channel, kernel_size=1))
+            inp_channels = hidden_channel
+        layers.append(nn.Conv2d(inp_channels, self.out_channels, kernel_size=1))
+        return nn.Sequential(*layers)
 
 
 class SineActivation(nn.Module):
@@ -149,4 +160,22 @@ class ComplexGaborActivation(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.exp(1j * self.omega_0 * x) * torch.exp(-(torch.abs(self.sigma *x)**2))
+
+def bspline_wavelet(x, scale):
+    return (1 / 6) * F.relu(scale*x)\
+    - (8 / 6) * F.relu(scale*x - (1 / 2))\
+    + (23 / 6) * F.relu(scale*x - (1))\
+    - (16 / 3) * F.relu(scale*x - (3 / 2))\
+    + (23 / 6) * F.relu(scale*x - (2))\
+    - (8 / 6) * F.relu(scale*x - (5 / 2))\
+    +(1 / 6) * F.relu(scale*x - (3))
+
+class BSplineWavelet(nn.Module):
+    def __init__(self, scale=torch.as_tensor(1)):
+        super().__init__()
+        self.scale = torch.as_tensor(scale)
     
+    def forward(self, x):
+        output = bspline_wavelet(x, self.scale)
+        
+        return output

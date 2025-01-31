@@ -1,5 +1,6 @@
-import torch
+import torch    
 import torch.nn as nn
+import torch.nn.functional as F
 
 import numpy as np
 
@@ -42,11 +43,11 @@ class ComplexGaborConv2d(nn.Module):
             out = out.real
         return out
     
-class WIREINR_Conv2D(nn.Module):
+class WIRE2D(nn.Module):
     """WireINR Conv2D module
     """
     def __init__(self, in_channels: int, out_channels: int, omega: float = 10.0, sigma: float = 10.0, trainable: bool = False, hidden_layers: List[int] = [64, 64, 64, 64]):
-        super(WIREINR_Conv2D, self).__init__()
+        super(WIRE2D, self).__init__()
 
         # Since complex numbers are two real numbers
         # reduce the number of hidden parameters by 2
@@ -63,13 +64,10 @@ class WIREINR_Conv2D(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).real
     
-    def from_config(config: Dict[str, Any]) -> 'WIREINR_Conv2D':
-        return WIREINR_Conv2D(config['in_channels'], config['out_channels'], config['omega'], config['sigma'], config['trainable'], config['hidden_layers'])
-
-
-if __name__ == "__main__":
-    # Test WIREINR_Conv2D
-    x = torch.randn(1, 64, 32, 32)
-    wire = WIREINR_Conv2D(64 , 3 , omega=10.0, sigma=10.0, trainable=True , hidden_layers=[64, 64, 64, 64])
-    out = wire(x)
-    print(out.shape)
+    def from_config(config: Dict[str, Any]) -> 'WIRE2D':
+        return WIRE2D(in_channels=config['in_channels'], 
+                      out_channels=config['out_channels'], 
+                      omega=config['omega'], 
+                      sigma=config['sigma'], 
+                      trainable=config['trainable'], 
+                      hidden_layers=config['hidden_layers'])

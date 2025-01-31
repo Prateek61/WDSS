@@ -57,6 +57,16 @@ class ResBlock(nn.Module):
     
 
 class LightWeightGatedConv2D(nn.Module):
+    """
+    Lightweight Gated Convolutions (LWGC) module.
+
+    Args:
+        in_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
+        kernel_size (int): Kernel size for the convolution.
+        stride (int): Stride for the convolution.
+        padding (int): Padding for the convolution.
+    """
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int, stride: int, padding: int):
         super(LightWeightGatedConv2D, self).__init__()
 

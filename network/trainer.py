@@ -128,7 +128,7 @@ class Trainer:
 
             self.model.eval()
             with torch.no_grad():
-                wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp , 2.0)
+                wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
             self.log_image(img[0].detach().cpu(), f'pred_{i}', step)
             self.log_wavelet(wavelet[0].detach().cpu(), f'wavelet_pred_{i}', step)
