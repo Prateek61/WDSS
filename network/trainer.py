@@ -4,9 +4,11 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 import threading
 import matplotlib.pyplot as plt
+import os
+from torchvision.utils import save_image
 
 from .model_utils import ModelUtils
-from .losses import CriterionBase
+from .losses import CriterionBase , ImageEvaluator
 from .models.ModelBase import ModelBase
 from .dataset import *
 from utils.wdss_logger import NetworkLogger
@@ -16,7 +18,7 @@ from config import device, Settings
 from enum import Enum
 import io
 
-from typing import Dict, Tuple
+from typing import Dict, Tuple , Any
 
 class Trainer:
     def __init__(self, settings: Settings, 
@@ -148,6 +150,8 @@ class Trainer:
             self.log_wavelet(wavelet[0].detach().cpu(), f'wavelet_gt_{i}', None)
             
 
+    
+    
 
     def train(self, num_epochs: int):
         """Train the model
@@ -326,6 +330,71 @@ class Trainer:
         # Save the final model checkpoint
         if self.total_epochs % self.settings.model_save_interval != 0:
             self.save_checkpoint(f'{self.total_epochs}.pth')
+            
+
+    def test(self):
+        test_loader = DataLoader(self.test_dataset, batch_size=1, shuffle=False)
+        
+        self.load_best_checkpoint()
+        self.model.eval()
+        
+        all_losses = []  # List to store all losses
+
+        # Wrap the loop with tqdm to show progress
+        for i, frame in tqdm(enumerate(test_loader), total=len(test_loader), desc="Testing"):
+            lr_inp = frame[FrameGroup.LR.value].to(device)
+            gb_inp = frame[FrameGroup.GB.value].to(device)
+            temporal_inp = frame[FrameGroup.TEMPORAL.value].to(device)
+            hr_gt = frame[FrameGroup.HR.value].to(device)
+            hr_wavelet = WaveletProcessor.batch_wt(hr_gt)
+            
+            mse_wavelet = 0
+            psnr_wavelet = 0
+            lipps_wavelet = 0
+            
+            with torch.no_grad():
+                wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
+
+            # Calculate the loss using ImageEvaluator's methods
+            total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
+            
+            # Calculate MSE and PSNR using ImageEvaluator methods
+            mse = ImageEvaluator.mse(img, hr_gt)
+            psnr = ImageEvaluator.psnr(img, hr_gt)
+            lipps = ImageEvaluator.lpips(img, hr_gt)
+            
+            wavelet_components = [
+                (wavelet[:, 0:3, :, :], hr_wavelet[:, 0:3, :, :]),  # Approximation
+                (wavelet[:, 3:6, :, :], hr_wavelet[:, 3:6, :, :]),  # Horizontal
+                (wavelet[:, 6:9, :, :], hr_wavelet[:, 6:9, :, :]),  # Vertical
+                (wavelet[:, 9:12, :, :], hr_wavelet[:, 9:12, :, :])  # Diagonal
+            ]
+            
+            for wavelet_comp, hr_wavelet_comp in wavelet_components:
+                mse_wavelet += ImageEvaluator.mse(wavelet_comp, hr_wavelet_comp)
+                psnr_wavelet += ImageEvaluator.psnr(wavelet_comp, hr_wavelet_comp)
+                lipps_wavelet += ImageEvaluator.lpips(wavelet_comp, hr_wavelet_comp)
+            
+            mse_wavelet /= 4
+            psnr_wavelet /= 4
+            lipps_wavelet /= 4
+            
+            losses['mse'] = mse.item()
+            losses['mse_wavelet'] = mse_wavelet
+            
+            losses['psnr'] = psnr.item()
+            losses['psnr_wavelet'] = psnr_wavelet
+            
+            # Calculate LPIPS using ImageEvaluator method            
+            losses['lipps'] = lipps.item()
+            losses['lipps_wavelet'] = lipps_wavelet
+            
+            # Append the losses to the list
+            all_losses.append(losses)
+
+        return all_losses  # Return the list of all losses
+
+            
 
     def save_checkpoint(self, file_name: str):
         """Save the model checkpoint.
@@ -422,7 +491,7 @@ class Trainer:
         loss_file = os.listdir(os.path.join(self.settings.log_path(), loss_folder))[0]
         loss_path = os.path.join(self.settings.log_path(), loss_folder, loss_file)
         
-        return self.logger.get_scalars_from_path(loss_path)
+        return self.logger.get_all_scalars(loss_path)
     
     def get_image_data(self) -> Dict[str, list]:
         """Get the image data from the file.
@@ -435,15 +504,14 @@ class Trainer:
         path = os.path.join(self.settings.log_path(), image_path[0])
         
         return self.logger.get_image_tags(path)
-    
-    
-    
-    def visualize_losses(self, loss: str):
-        """Visualize the loss data."""
+        
+
+    def visualize_losses(self, loss: str, config: Dict[str, Any] = {}):
+        """Visualize the loss data with configurable colors, linestyles, clipping, and axis ranges."""
         
         # Fetch loss data
-        train_losses = self.get_loss_data(loss + '_train')
-        val_losses = self.get_loss_data(loss + '_val')
+        train_losses = self.logger.get_all_scalars(loss + '_train')
+        val_losses = self.logger.get_all_scalars(loss + '_val')
 
         # Ensure the loss key exists in the dictionaries
         if loss not in train_losses or loss not in val_losses:
@@ -454,20 +522,53 @@ class Trainer:
         train_steps, train_values = zip(*train_losses[loss]) if train_losses[loss] else ([], [])
         val_steps, val_values = zip(*val_losses[loss]) if val_losses[loss] else ([], [])
 
+        # Convert to NumPy arrays for better handling
+        train_values = np.array(train_values)
+        val_values = np.array(val_values)
+
+        # Clip values if threshold is specified
+        clip_threshold = config.get('clip_threshold', None)
+        if clip_threshold:
+            train_values = np.clip(train_values, 0, clip_threshold)
+            val_values = np.clip(val_values, 0, clip_threshold)
+
+        # Get color and linestyle configurations (fallback to defaults)
+        train_color = config.get('train_color', 'blue')
+        val_color = config.get('val_color', 'red')
+        train_linestyle = config.get('train_linestyle', '-')
+        val_linestyle = config.get('val_linestyle', '--')
+
         # Plot the losses
         plt.figure(figsize=(8, 5))
-        plt.plot(train_steps, train_values, label='Train Loss', marker='o', linestyle='-')
-        plt.plot(val_steps, val_values, label='Validation Loss', marker='s', linestyle='--')
-        
+        plt.plot(train_steps, train_values, label='Train Loss', linestyle=train_linestyle, color=train_color)
+        plt.plot(val_steps, val_values, label='Validation Loss', linestyle=val_linestyle, color=val_color)
+
         # Labels and title
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
-        plt.title(f'Graph for {loss}')
+
+        if config.get('title', True):
+            plt.title(f'Loss Curve for {loss}')
+            
         plt.legend()
-        plt.grid(True)
-        
+
+        # Grid for better visualization
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+        # Rotate x-axis labels for better visibility
+        plt.xticks(rotation=45)
+
+        # Set axis limits if provided in config
+        if 'xlim' in config:
+            plt.xlim(config['xlim'])
+        if 'ylim' in config:
+            plt.ylim(config['ylim'])
+
         # Show the plot
         plt.show()
+
+
+
         
     def visualize_image(self, tag: str , step : int) :
         """Visualize the image data."""
@@ -500,3 +601,63 @@ class Trainer:
             plt.show()
 
         
+
+    def test_images(self, index: int, save: bool = False):
+        """Test the images and display results."""
+        
+        self.load_best_checkpoint()
+        self.model.eval()
+
+        # Get test image
+        frame = self.test_dataset[index]
+        lr_inp = frame[FrameGroup.LR.value].unsqueeze(0).to(device)
+        gb_inp = frame[FrameGroup.GB.value].unsqueeze(0).to(device)
+        temporal_inp = frame[FrameGroup.TEMPORAL.value].unsqueeze(0).to(device)
+        hr_gt = frame[FrameGroup.HR.value].unsqueeze(0).to(device)
+
+        # Compute wavelet transform on ground truth
+        hr_wavelet = WaveletProcessor.batch_wt(hr_gt)
+
+        with torch.no_grad():
+            wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
+
+        # Convert tensors to CPU for visualization
+        lr_img = lr_inp[0].detach().cpu()
+        hr_img = hr_gt[0].detach().cpu()
+        pred_img = img[0].detach().cpu()
+
+        # Display original images
+        ImageUtils.display_images([lr_img, hr_img, pred_img], ['LR', 'HR', 'Pred'])
+
+        # Create save directory for this index
+        save_dir = f"saved_tests/{index}"
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Save images if enabled
+        if save:
+            save_image(lr_img, f"{save_dir}/lr.png")
+            save_image(hr_img, f"{save_dir}/hr.png")
+            save_image(pred_img, f"{save_dir}/pred.png")
+
+        # Display and save wavelet components
+        for i, label in enumerate(["Approximation", "Horizontal", "Vertical", "Diagonal"]):
+            hr_wavelet_img = hr_wavelet[0, i * 3:(i + 1) * 3, :, :].detach().cpu()
+            pred_wavelet_img = wavelet[0, i * 3:(i + 1) * 3, :, :].detach().cpu()
+
+            # Show images without modifications
+            ImageUtils.display_images([hr_wavelet_img, pred_wavelet_img], [f'HR {label}', f'Pred {label}'])
+
+            if save:
+                # Normalize wavelets for saving (min-max scaling to [0,1])
+                def normalize_image(img):
+                    min_val, max_val = img.min(), img.max()
+                    return (img - min_val) / (max_val - min_val + 1e-8)  # Avoid division by zero
+
+                hr_wavelet_img = normalize_image(hr_wavelet_img)
+                pred_wavelet_img = normalize_image(pred_wavelet_img)
+
+                # Save images
+                save_image(hr_wavelet_img, f"{save_dir}/hr_wavelet_{label.lower()}.png")
+                save_image(pred_wavelet_img, f"{save_dir}/pred_wavelet_{label.lower()}.png")
+
+

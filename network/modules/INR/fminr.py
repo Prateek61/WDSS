@@ -4,7 +4,7 @@ import torch.nn as nn
 from .relu import ReLUINR
 from .wire import WIRE2D
 from .fourier_mapping import FourierMapping, SimpleMapping
-from .wire import WIREINR_Conv2D
+from .wire import WIRE2D    
 from .siren import Siren
 
 from typing import List, Dict, Any

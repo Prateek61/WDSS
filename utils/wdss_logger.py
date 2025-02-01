@@ -23,18 +23,32 @@ class NetworkLogger:
     def log_image(self, tag: str, img_tensor, global_step: int, component_name: str = "") -> None:
         self.get_writer(component_name).add_image(tag, img_tensor, global_step)
 
-    def get_scalars_from_path(self, path: str) -> Dict[str, List[Tuple[int, float]]]:
-        if path in self.cached_scalars:
-            return self.cached_scalars[path]
+    def get_scalars_from_path(self, path: str, file_name: str) -> Dict[str, List[Tuple[int, float]]]:
+        full_path = os.path.join(path, file_name)
+        if full_path in self.cached_scalars:
+            return self.cached_scalars[full_path]
         
-        event_acc = EventAccumulator(path)
+        event_acc = EventAccumulator(full_path)
         event_acc.Reload()
         scalars = self._get_scalars(event_acc)
-        self.cached_scalars[path] = scalars
+        self.cached_scalars[full_path] = scalars
         return scalars
 
+    def get_all_scalars(self, file_name: str) -> Dict[str, Dict[str, List[Tuple[int, float]]]]:
+        all_scalars = {}
+        full_path = os.path.join(self.log_path, file_name)
+        for files in os.listdir(full_path):
+            if files.startswith("events"):
+                event_acc = EventAccumulator(os.path.join(full_path, files))
+                event_acc.Reload()
+                scalars = self._get_scalars(event_acc)
+                for tag, data in scalars.items():
+                    if tag not in all_scalars:
+                        all_scalars[tag] = []
+                    all_scalars[tag].extend(data)
+        return all_scalars
+    
     def get_image_tags(self, path: str) -> List[str]:
-        # Only cache image tags once to avoid redundant reloading
         if path not in self.cached_images:
             event_acc = EventAccumulator(path, size_guidance={'images': 0})
             event_acc.Reload()
@@ -60,8 +74,7 @@ class NetworkLogger:
         return data
     
     def _get_image_tags(self, event_acc: EventAccumulator) -> List[str]:
-        tags = event_acc.Tags()
-        return tags.get("images", [])
+        return event_acc.Tags().get("images", [])
     
     def _get_images_by_tag(self, event_acc: EventAccumulator, tag: str) -> List[Tuple[int, bytes]]:
         image_tags = event_acc.Tags().get("images", [])

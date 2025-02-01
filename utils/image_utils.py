@@ -209,3 +209,4 @@ class ImageUtils:
             axes[i].set_title(title)
             axes[i].axis('off')
         plt.show()
+        

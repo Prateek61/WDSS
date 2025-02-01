@@ -16,6 +16,7 @@ out/
 data/
 temp/
 config/
+saved_tests/
 
 system.log
 
