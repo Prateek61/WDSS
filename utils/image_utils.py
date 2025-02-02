@@ -209,3 +209,98 @@ class ImageUtils:
             axes[i].set_title(title)
             axes[i].axis('off')
         plt.show()
+
+    @staticmethod
+    def tone_map(image: torch.Tensor, gamma: float = 2.2) -> torch.Tensor:
+        """Apply gamma correction to the input image tensor.
+
+        Returns:
+            torch.Tensor: Tone-mapped image tensor.
+        """
+
+        # Apply gamma correction
+        image = image ** (1.0 / gamma)
+        return image.clamp(0, 1)
+    
+    @staticmethod
+    def tone_de_map(image: torch.Tensor, gamma: float = 2.2) -> torch.Tensor:
+        """Apply gamma correction to the input image tensor.
+
+        Returns:
+            torch.Tensor: Tone-mapped image tensor.
+        """
+
+        # Apply gamma correction
+        image = image ** gamma
+        return image.clamp(0, 1)
+    
+    @staticmethod
+    def aces_tonemap(image: torch.Tensor, gain: float = 1.4) -> torch.Tensor:
+        A = 2.51
+        B = 0.03
+        C = 2.43
+        D = 0.59
+        E = 0.14
+
+        pre_tonemapping_transform = torch.Tensor([
+            [0.575961650,  0.344143820,  0.079952030],
+            [0.070806820,  0.827392350,  0.101774690],
+            [0.028035252,  0.131523770,  0.840242300]
+        ])
+
+        post_tonemapping_transform = torch.Tensor([
+            [1.666954300, -0.601741150, -0.065202855],
+            [-0.106835220,  1.237778600, -0.130948950],
+            [-0.004142626, -0.087411870,  1.091555000]
+        ])
+
+        exposed_pretonemapped_transform = gain * pre_tonemapping_transform
+        
+        # Move channels to the last
+        image = image.permute(0, 2, 3, 1)
+
+        image = image @ exposed_pretonemapped_transform.T
+
+        image = (image * (A * image + B)) / (image * (C * image + D) + E).clamp(min=0.0, max=1.0)
+
+        image = image @ post_tonemapping_transform.T
+
+        return image.permute(0, 3, 1, 2).clamp(min=0.0, max=1.0)
+    
+    @staticmethod
+    def aces_tonemap_fast(image: torch.Tensor, gain: float = 1.0) -> torch.Tensor:
+        A = 2.51
+        B = 0.03
+        C = 2.43
+        D = 0.59
+        E = 0.14
+
+        image = image * gain
+
+        image = (image * (A * image + B)) / (image * (C * image + D) + E)
+
+        return image.clamp(0.0, 1.0)
+
+
+    @staticmethod 
+    def _hable_tonemap_core(x: torch.Tensor) -> torch.Tensor:
+        hA = 0.15
+        hB = 0.50
+        hC = 0.10
+        hD = 0.20
+        hE = 0.02
+        hF = 0.30
+
+        return ((x * (hA * x + hC * hB) + hD * hE) / (x * (hA * x + hB) + hD * hF)) - (hE / hF)
+    
+    @staticmethod
+    def hable_tonemap(x: torch.Tensor) -> torch.Tensor:
+        x = ImageUtils._hable_tonemap_core(x)
+        hw = torch.as_tensor(11.2)
+        white_scale = 1.0 / ImageUtils._hable_tonemap_core(hw)
+        x = x * white_scale
+        return x.clamp(0.0, 1.0)
+    
+    @staticmethod
+    def tonemap(image: torch.Tensor) -> torch.Tensor:
+        return ImageUtils.aces_tonemap_fast(image, gain=1.6)
