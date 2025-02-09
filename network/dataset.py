@@ -103,8 +103,8 @@ class WDSSDatasetCompressed(Dataset):
     FRAME_PATHS = {
         'HR_FOLDER': 'HighRes',
         'LR_FOLDER': 'LowRes',
-        'HR_GB_FOLDER': 'HighResGBuffer',
-        'LR_GB_FOLDER': 'LowResGBuffer'
+        'HR_GB_FOLDER': 'HighResGbuffer',
+        'LR_GB_FOLDER': 'LowResGbuffer'
     }
 
     def __init__(self, root_dir: str, frames_per_zip: int, patch_size: int = 0, upscale_factor: int = 2, multi_patches_per_frame: bool = False, num_threads: int = 8):

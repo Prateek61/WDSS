@@ -8,7 +8,7 @@ import os
 from torchvision.utils import save_image
 
 from .model_utils import ModelUtils
-from .losses import CriterionBase , ImageEvaluator
+from .losses import CriterionBase , ImageEvaluator , L1Norm
 from .models.ModelBase import ModelBase
 from .dataset import *
 from utils.wdss_logger import NetworkLogger
@@ -42,6 +42,7 @@ class Trainer:
         self.total_epochs = 0
         self.logger = NetworkLogger(settings.log_path())
         self.test_dataset = test_dataset
+        self.l1 = L1Norm()
 
         # For threading
         self._batch_loss: float | None = None
@@ -348,7 +349,7 @@ class Trainer:
             hr_gt = frame[FrameGroup.HR.value].to(device)
             hr_wavelet = WaveletProcessor.batch_wt(hr_gt)
             
-            mse_wavelet = 0
+            l1_wavelet = 0
             psnr_wavelet = 0
             lipps_wavelet = 0
             
@@ -359,7 +360,8 @@ class Trainer:
             total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
             
             # Calculate MSE and PSNR using ImageEvaluator methods
-            mse = ImageEvaluator.mse(img, hr_gt)
+            
+            l1_loss = self.l1(img, hr_gt)
             psnr = ImageEvaluator.psnr(img, hr_gt)
             lipps = ImageEvaluator.lpips(img, hr_gt)
             
@@ -371,16 +373,17 @@ class Trainer:
             ]
             
             for wavelet_comp, hr_wavelet_comp in wavelet_components:
-                mse_wavelet += ImageEvaluator.mse(wavelet_comp, hr_wavelet_comp)
                 psnr_wavelet += ImageEvaluator.psnr(wavelet_comp, hr_wavelet_comp)
                 lipps_wavelet += ImageEvaluator.lpips(wavelet_comp, hr_wavelet_comp)
+                l1_wavelet += self.l1(wavelet_comp, hr_wavelet_comp)
             
-            mse_wavelet /= 4
+            l1_wavelet /= 4
             psnr_wavelet /= 4
             lipps_wavelet /= 4
             
-            losses['mse'] = mse.item()
-            losses['mse_wavelet'] = mse_wavelet
+            losses['l1_image'] = l1_loss.item()
+            losses['l1_wavelet'] = l1_wavelet
+            
             
             losses['psnr'] = psnr.item()
             losses['psnr_wavelet'] = psnr_wavelet
@@ -391,7 +394,6 @@ class Trainer:
             
             # Append the losses to the list
             all_losses.append(losses)
-
         return all_losses  # Return the list of all losses
 
             
