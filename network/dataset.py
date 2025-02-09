@@ -14,6 +14,7 @@ from utils.wavelet import WaveletProcessor
 from config import Settings
 from multiprocessing.pool import ThreadPool, AsyncResult
 from utils.masks import Mask
+from utils.patch import Patch
 
 import threading
 
@@ -25,21 +26,15 @@ class GB_Type(Enum):
     """
     BASE_COLOR = 'BaseColor'
     DIFFUSE_COLOR = 'DiffuseColor'
+    METALLIC_ROUGHNESS_SPECULAR = 'MetallicRoughnessSpecular'
     MOTION_VECTOR = 'MotionVector'
-    NoV = 'NoV' # Dot product of normal and view vector
-    DEPTH = 'SceneDepth'
+    NoV_Depth = 'NoVDepth'
+    PRE_TONEMAPPED = 'PreTonemapHDRColor'
     NORMAL = 'WorldNormal'
-    METALLIC = 'Metallic'
-    ROUGHNESS = 'Roughness'
-    SPECULAR = 'Specular'
 
 GBufferChannels = {
     GB_Type.MOTION_VECTOR: [0, 1],
-    GB_Type.DEPTH: [0],
-    GB_Type.METALLIC: [0],
-    GB_Type.ROUGHNESS: [0],
-    GB_Type.NoV: [0],
-    GB_Type.SPECULAR: [0]
+    GB_Type.NoV_Depth: [0, 1]
 }
 
 class RawFrameGroup(Enum):
@@ -57,6 +52,8 @@ class FrameGroup(Enum):
     LR = 'LR'
     GB = 'GB'
     TEMPORAL = 'TEMPORAL'
+    EXTRA = 'EXTRA'
+    INFERENCE = 'INFERENCE'
 
 class DatasetUtils:
     @staticmethod
@@ -99,6 +96,8 @@ class WDSSDatasetBase(Dataset):
     def __getitem__(self, index):
         raise NotImplementedError
 
+from utils.preprocessor import Preprocessor
+
 class WDSSDatasetCompressed(Dataset):
     FRAME_PATHS = {
         'HR_FOLDER': 'HighRes',
@@ -107,7 +106,16 @@ class WDSSDatasetCompressed(Dataset):
         'LR_GB_FOLDER': 'LowResGbuffer'
     }
 
-    def __init__(self, root_dir: str, frames_per_zip: int, patch_size: int = 0, upscale_factor: int = 2, multi_patches_per_frame: bool = False, num_threads: int = 8):
+    def __init__(
+        self,
+        root_dir: str,
+        frames_per_zip: int,
+        patch_size: int = 0,
+        upscale_factor: int = 2,
+        multi_patches_per_frame: bool = False,
+        num_threads: int = 8,
+        preprocessor: Preprocessor = None
+    ):
         self.root_dir = root_dir
         self.frames_per_zip = frames_per_zip
         self.compressed_files = os.listdir(root_dir)
@@ -115,62 +123,35 @@ class WDSSDatasetCompressed(Dataset):
         self.upscale_factor = upscale_factor
         self.multi_patches_per_frame = multi_patches_per_frame
         self.thread_pool = ThreadPool(max(num_threads, 4))
+        self.preprocessor = preprocessor
 
-        self.patches_per_frame = self._patches_per_frame((360, 640), patch_size)
+        self.patch = Patch((360, 640), self.upscale_factor, self.patch_size, self.multi_patches_per_frame)
+
+        self.patches_per_frame = self.patch.patches_per_frame
         self.total_frames = len(self.compressed_files) * self.patches_per_frame * frames_per_zip
 
     @DatasetUtils.wrap_try
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
         raw_frames = self._get_raw_frames(idx)
 
-        res: Dict[str, torch.Tensor] = {}
+        return self.preprocessor.preprocess(raw_frames, 2.0)
+    
+    @DatasetUtils.wrap_try
+    def get_inference_frame(self, idx: int) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
+        raw_frames = self._get_raw_frames(idx, no_patch=True)
 
-        res[FrameGroup.HR.value] = raw_frames[RawFrameGroup.HR]
-        res[FrameGroup.LR.value] = raw_frames[RawFrameGroup.LR]
-        
-        spatial_mask, temporal_mask = Mask.spatial_and_temporal_mask(
-            hr_base_color=raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR].unsqueeze(0),
-            hr_normal=raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL].unsqueeze(0),
-            hr_depth=raw_frames[RawFrameGroup.HR_GB][GB_Type.DEPTH].unsqueeze(0),
-            lr_base_color=raw_frames[RawFrameGroup.LR_GB][GB_Type.BASE_COLOR].unsqueeze(0),
-            lr_normal=raw_frames[RawFrameGroup.LR_GB][GB_Type.NORMAL].unsqueeze(0),
-            lr_depth=raw_frames[RawFrameGroup.LR_GB][GB_Type.DEPTH].unsqueeze(0),
-            motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_Type.MOTION_VECTOR].unsqueeze(0),
-            temporal_hr_base_color=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.BASE_COLOR].unsqueeze(0),
-            temporal_hr_normal=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NORMAL].unsqueeze(0),
-            temporal_hr_depth=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DEPTH].unsqueeze(0),
-            upscale_factor=2, 
-            spatial_threasholds={
-                'depth': 0.04,
-                'normal': 0.4,
-                'albedo': 0.1
-            }
-        )
+        return self.preprocessor.preprocess_for_inference(raw_frames, 2.0)
 
-        gb: torch.Tensor = raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR]
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NoV]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.DEPTH]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.NORMAL]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.ROUGHNESS]], dim=0)
-        gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.SPECULAR]], dim=0)
-        gb = torch.cat([gb, spatial_mask.squeeze(0)], dim=0)
-        res[FrameGroup.GB.value] = gb
+    @DatasetUtils.wrap_try
+    def get_log_frames(self, idx: int) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
+        raw_frames = self._get_raw_frames(idx)
 
-        warped_temporal = Mask.warp_frame(frame=raw_frames[RawFrameGroup.TEMPORAL].unsqueeze(0), motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_Type.MOTION_VECTOR].unsqueeze(0))
-        res[FrameGroup.TEMPORAL.value] = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
-
-        return res
+        return self.preprocessor.get_log(raw_frames)
 
     def _get_raw_frames(self, frame_no: int, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]:
         """Returns raw frame patches.
         """
         res: Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor] = {}
-
-        # This is not working inside the with block
-        thread_hr_gb: Dict[GB_Type, torch.Tensor] = {}
-        thread_lr_gb: Dict[GB_Type, torch.Tensor] = {}
-        thread_temporal_gb: Dict[GB_Type, torch.Tensor] = {}
 
         if not no_patch:
             patch_idx = frame_no % self.patches_per_frame
@@ -201,16 +182,16 @@ class WDSSDatasetCompressed(Dataset):
             # Get the patch position
             # Which is a random crop from the frame
             _, lr_h, lr_w = res[RawFrameGroup.LR].shape
-            lr_window, hr_window = self._get_random_patch_window(patch_idx ,(lr_h, lr_w), self.upscale_factor, self.patch_size)
+            lr_window, hr_window = self.patch.get_patch_window(patch_idx)
             res[RawFrameGroup.HR] = res[RawFrameGroup.HR][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
             res[RawFrameGroup.LR] = res[RawFrameGroup.LR][:, lr_window[0][0]:lr_window[1][0], lr_window[0][1]:lr_window[1][1]]
             res[RawFrameGroup.TEMPORAL] = res[RawFrameGroup.TEMPORAL][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
             for gb_type in GB_Type:
                 res[RawFrameGroup.HR_GB][gb_type] = res[RawFrameGroup.HR_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
                 res[RawFrameGroup.LR_GB][gb_type] = res[RawFrameGroup.LR_GB][gb_type][:, lr_window[0][0]:lr_window[1][0], lr_window[0][1]:lr_window[1][1]]
-            for gb_type in [GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL]:
+            for gb_type in [GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED]:
                 res[RawFrameGroup.TEMPORAL_GB][gb_type] = res[RawFrameGroup.TEMPORAL_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
-
+                
         return res
 
     def _get_gbuffer(self, frame_idx: int, zip_ref: zipfile.ZipFile, base_folder: str, gb_type: GB_Type, path: str) -> torch.Tensor:
@@ -250,10 +231,10 @@ class WDSSDatasetCompressed(Dataset):
         res = {}
 
         results: List[AsyncResult] = []
-        for gb_type in [GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL]:
+        for gb_type in [GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED]:
             results.append(self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_gbuffer), (frame_idx, zip_ref, base_folder, gb_type, self._get_hr_gb_path(frame_idx, gb_type))))
 
-        for gb_type, result in zip([GB_Type.BASE_COLOR, GB_Type.DEPTH, GB_Type.NORMAL], results):
+        for gb_type, result in zip([GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED], results):
             res[gb_type] = result.get()
 
         return res
@@ -305,140 +286,6 @@ class WDSSDatasetCompressed(Dataset):
         return zip_file.namelist()[0].split('/')[0] + '/'
 
 
-    def _patches_per_frame(self, low_resolution: Tuple[int, int], patch_size: int) -> int:
-        """Return the number of patches in the frame
-        """
-
-        if self.patch_size == 0:
-            return 1
-        
-        if not self.multi_patches_per_frame:
-            return 1
-        
-        if low_resolution == (360, 640) and patch_size == 256:
-            return 5
-
-        lr_h, lr_w = low_resolution
-        patch_h, patch_w = patch_size, patch_size
-
-        num_patches_h = (lr_h // patch_h) + 1
-        num_patches_w = (lr_w // patch_w) + 1
-
-        return num_patches_h * num_patches_w
-
-
-    def _get_random_patch_window(self, patch_idx: int, LowResolution: Tuple[int, int], UpscaleFactor: float, PatchSize: int) -> Tuple[Tuple[Tuple[int, int], Tuple[int, int]], Tuple[Tuple[int, int], Tuple[int, int]]]:
-        """Returns a patch window for the given low resolution and upscale factor and a patch index.
-
-        Returns:
-            Tuple containing the patch window (y, x) for (tl, br) in LR and HR.
-        """
-        if not self.multi_patches_per_frame:
-            lr_h, lr_w = LowResolution
-            patch_h, patch_w = PatchSize, PatchSize
-
-            # Number of patches in the image
-            num_patches_h = (lr_h // patch_h) + 1
-            num_patches_w = (lr_w // patch_w) + 1
-
-            # Randomly select a patch
-            patch_idx_y = randint(0, num_patches_h - 1)
-            patch_idx_x = randint(0, num_patches_w - 1)
-
-            # Get the patch window
-            patch_y = min(patch_idx_y * (lr_h // num_patches_h), lr_h - patch_h)
-            patch_x = min(patch_idx_x * (lr_w // num_patches_w), lr_w - patch_w) 
-
-            hr_patch_y_tl = patch_y * UpscaleFactor
-            hr_patch_x_tl = patch_x * UpscaleFactor
-            hr_patch_y_br = hr_patch_y_tl + patch_h * UpscaleFactor
-            hr_patch_x_br = hr_patch_x_tl + patch_w * UpscaleFactor
-
-            lr_window = ((patch_y, patch_x), (patch_y + patch_h, patch_x + patch_w))
-            hr_window = ((hr_patch_y_tl, hr_patch_x_tl), (hr_patch_y_br, hr_patch_x_br))
-            return lr_window, hr_window
-
-
-        if LowResolution == (360, 640) and PatchSize == 256:
-            return self._patch_window_def(patch_idx)
-
-        # LR and patch size
-        lr_h, lr_w = LowResolution
-        patch_h, patch_w = PatchSize, PatchSize
-        # Number of patches in hight and width direction
-        num_patches_h = (lr_h // patch_h) + 1
-        num_patches_w = (lr_w // patch_w) + 1
-        # Patch index in hight and width direction
-        patch_idx_y, patch_idx_x = divmod(patch_idx, num_patches_w)
-        # Temporary stride
-        tmp_stride_h = lr_h // num_patches_h
-        tmp_stride_w = lr_w // num_patches_w
-        # Stride in hight and width direction
-        stride_h = int((lr_h - patch_h * 0.10) // num_patches_h)
-        stride_w = int((lr_w - patch_w * 0.10) // num_patches_w)
-        # Patch position in LR
-        patch_y = int(patch_h * 0.05 + patch_idx_y * stride_h)
-        patch_x = int(patch_w * 0.05 + patch_idx_x * stride_w)
-        # Patch can move by 20% of the stride
-        patch_y += randint(-stride_h // 5, stride_h // 5)
-        patch_x += randint(-stride_w // 5, stride_w // 5)
-        # Clip the patch to the frame
-        patch_y = min(max(patch_y, 0), lr_h - patch_h)
-        patch_x = min(max(patch_x, 0), lr_w - patch_w)
-
-        hr_patch_y_tl = patch_y * UpscaleFactor
-        hr_patch_x_tl = patch_x * UpscaleFactor
-        hr_patch_y_br = hr_patch_y_tl + patch_h * UpscaleFactor
-        hr_patch_x_br = hr_patch_x_tl + patch_w * UpscaleFactor
-
-        lr_window = ((patch_y, patch_x), (patch_y + patch_h, patch_x + patch_w))
-        hr_window = ((hr_patch_y_tl, hr_patch_x_tl), (hr_patch_y_br, hr_patch_x_br))
-        return lr_window, hr_window
-
-    def _patch_window_def(self, patch_idx: int) -> Tuple[Tuple[Tuple[int, int], Tuple[int, int]], Tuple[Tuple[int, int], Tuple[int, int]]]:
-        """Patch window for resolution 360x640 and patch size 256 and upscale factor 2
-        """
-
-        lr_h, lr_w = 360, 640
-        patch_h, patch_w = 256, 256
-        num_patches_h = 2
-        num_patches_w = 2
-        upscale_factor = 2
-
-        h_window = lr_h - patch_h
-        w_window = lr_w - patch_w
-
-        if patch_idx == 0:
-            patch_y, patch_x = h_window * 0.1, w_window * 0.1
-        elif patch_idx == 1:
-            patch_y, patch_x = h_window * 0.1, (lr_w - patch_w) - w_window * 0.1
-        elif patch_idx == 2:
-            patch_y, patch_x = (lr_h - patch_h) - h_window * 0.1, w_window * 0.1
-        elif patch_idx == 3:
-            patch_y, patch_x = (lr_h - patch_h) - h_window * 0.1, (lr_w - patch_w) - w_window * 0.1
-        elif patch_idx == 4:
-            patch_y, patch_x = h_window // 2, w_window // 2
-        else:
-            raise ValueError('Invalid patch index')
-        
-        # Patch can move 30% of the lr_h and lr_w in the y and x direction
-        patch_y += randint(-int(h_window * 0.15), int(h_window * 0.15))
-        patch_x += randint(-int(w_window * 0.15), int(w_window * 0.15))
-
-        # Clip the patch to the frame
-        patch_y = int(min(max(patch_y, 0), lr_h - patch_h))
-        patch_x = int(min(max(patch_x, 0), lr_w - patch_w))
-
-        hr_patch_y_tl = patch_y * upscale_factor
-        hr_patch_x_tl = patch_x * upscale_factor
-        hr_patch_y_br = hr_patch_y_tl + patch_h * upscale_factor
-        hr_patch_x_br = hr_patch_x_tl + patch_w * upscale_factor
-
-        lr_window = ((patch_y, patch_x), (patch_y + patch_h, patch_x + patch_w))
-        hr_window = ((hr_patch_y_tl, hr_patch_x_tl), (hr_patch_y_br, hr_patch_x_br))
-        return lr_window, hr_window
-
-
     def __len__(self):
         return self.total_frames
     
@@ -449,8 +296,9 @@ class WDSSDatasetCompressed(Dataset):
         Returns:
             Tuple containing the training, validation, and test datasets.
         """
-        train_dataset = WDSSDatasetCompressed(settings.train_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads)
-        val_dataset = WDSSDatasetCompressed(settings.val_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads)
-        test_dataset = WDSSDatasetCompressed(settings.test_dir, settings.frames_per_zip, 0, settings.upscale_factor, num_threads = settings.num_threads)
+        preprocessor = Preprocessor.from_config(settings.preprocessor_config)
+        train_dataset = WDSSDatasetCompressed(settings.train_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads, preprocessor)
+        val_dataset = WDSSDatasetCompressed(settings.val_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads, preprocessor)
+        test_dataset = WDSSDatasetCompressed(settings.test_dir, settings.frames_per_zip, 0, settings.upscale_factor, num_threads = settings.num_threads, preprocessor=preprocessor)
 
         return train_dataset, val_dataset, test_dataset

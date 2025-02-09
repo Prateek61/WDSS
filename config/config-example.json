@@ -1,26 +1,26 @@
 {
-    "job_name": "circle",
+    "job_name": "pp_pretonemapped",
     "out_dir": "out",
     "model_dir": "model",
     "log_dir": "logs",
-    "frames_per_zip": 119,
+    "frames_per_zip": 120,
     "patched": true,
     "patch_size": 256,
     "batch_size": 8,
     "test_images_idx": [0, 12, 40, 180],
     "system_log_file": "logs/system.log",
-    "model_save_interval": 1,
+    "model_save_interval": 5,
     "output_interval": 1,
     "upscale_factor": 2,
     "num_threads": 8,
     "multi_patches_per_frame": false,
-    "train_dir": "Data/train",
-    "val_dir": "Data/val",
-    "test_dir": "Data/test",
+    "train_dir": "D:\\Dev\\MinorProjDataset\\V5\\Data\\train",
+    "val_dir": "D:\\Dev\\MinorProjDataset\\V5\\Data\\test",
+    "test_dir": "D:\\Dev\\MinorProjDataset\\V5\\Data\\test",
     "model_config": {
         "name": "WDSS",
         "version": 1.0,
-        "sum_lr_wavelet": true,
+        "sum_lr_wavelet": false,
         "has_feature_fusion": true,
         "has_fminr": true,
         "lr_feat_extractor": {
@@ -67,6 +67,19 @@
                 "num_layers": 4,
                 "layer_size": 64
             }
+        }
+    },
+    "preprocessor_config": {
+        "reconstruction_frame_type": "PreTonemapped",
+        "log_scale_pre_tonemapped": true,
+        "pre_tonemapped_normalization_factor": 1.0,
+        "tonemapper": "Hable-10",
+        "log_scale_irridiance": true,
+        "irridiance_normalization_factor": 50.0,
+        "spatial_mask_threasholds": {
+            "depth": 0.04,
+            "normal": 0.4,
+            "albedo": 0.1
         }
     }
 }

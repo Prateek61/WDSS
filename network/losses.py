@@ -22,9 +22,8 @@ class ImageEvaluator:
         return ssim(input, target)
     
     @staticmethod
-    def psnr(input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def psnr(input: torch.Tensor, target: torch.Tensor, max_val: float) -> torch.Tensor:
         mse = torch.nn.functional.mse_loss(input, target)
-        max_val: torch.Tensor = max(input.max(), target.max())
         return 20 * torch.log10(max_val / torch.sqrt(mse))
     
     @staticmethod
@@ -49,6 +48,11 @@ class ImageEvaluator:
             lpips_val = lpips_val.to(input_device)
 
         return lpips_val
+    
+    @staticmethod
+    def l1(input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return torch.sum(torch.abs(input - target)) / torch.numel(input)
+
 
 # Abstract base class for criterion
 class CriterionBase(nn.Module, ABC):

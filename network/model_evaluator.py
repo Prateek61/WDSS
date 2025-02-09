@@ -20,12 +20,12 @@ class ModelEvaluator:
         bilinear_upsampled_lr = ImageUtils.upsample(lr, 2)
 
         mse = ImageEvaluator.mse(img, hr)
-        psnr = ImageEvaluator.psnr(img, hr)
+        psnr = ImageEvaluator.psnr(img, hr, 1.0)
         ssim = ImageEvaluator.ssim(img, hr)
         lpips = ImageEvaluator.lpips(img, hr)
 
         mse_bilinear = ImageEvaluator.mse(bilinear_upsampled_lr, hr)
-        psnr_bilinear = ImageEvaluator.psnr(bilinear_upsampled_lr, hr)
+        psnr_bilinear = ImageEvaluator.psnr(bilinear_upsampled_lr, hr, 1.0)
         ssim_bilinear = ImageEvaluator.ssim(bilinear_upsampled_lr, hr)
         lpips_bilinear = ImageEvaluator.lpips(bilinear_upsampled_lr, hr)
 
