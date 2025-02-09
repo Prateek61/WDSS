@@ -54,15 +54,11 @@ class Trainer:
         if not batch:
             return
 
-        # Move the batch to the device
-        for key in batch:
-            batch[key] = batch[key].to(device)
+        lr_inp = batch[FrameGroup.LR.value].to(device)
+        gb_inp = batch[FrameGroup.GB.value].to(device)
+        temporal_inp = batch[FrameGroup.TEMPORAL.value].to(device)
 
-        lr_inp = batch[FrameGroup.LR.value]
-        gb_inp = batch[FrameGroup.GB.value]
-        temporal_inp = batch[FrameGroup.TEMPORAL.value]
-
-        hr_gt = batch[FrameGroup.HR.value]
+        hr_gt = batch[FrameGroup.HR.value].to(device)
         hr_wavelet = WaveletProcessor.batch_wt(hr_gt)
 
         # Zero the gradients
@@ -92,15 +88,11 @@ class Trainer:
         if not batch:
             return 
 
-        # Move the batch to the device
-        for key in batch:
-            batch[key] = batch[key].to(device)
+        lr_inp = batch[FrameGroup.LR.value].to(device)
+        gb_inp = batch[FrameGroup.GB.value].to(device)
+        temporal_inp = batch[FrameGroup.TEMPORAL.value].to(device)
 
-        lr_inp = batch[FrameGroup.LR.value]
-        gb_inp = batch[FrameGroup.GB.value]
-        temporal_inp = batch[FrameGroup.TEMPORAL.value]
-
-        hr_gt = batch[FrameGroup.HR.value]
+        hr_gt = batch[FrameGroup.HR.value].to(device)
         hr_wavelet = WaveletProcessor.batch_wt(hr_gt)
 
         # Forward pass
@@ -122,7 +114,7 @@ class Trainer:
         """
 
         for i in self.settings.test_images_idx:
-            frame = self.test_dataset[i]
+            frame = self.test_dataset.get_inference_frame(i)
 
             lr_inp = frame[FrameGroup.LR.value].unsqueeze(0).to(device)
             gb_inp = frame[FrameGroup.GB.value].unsqueeze(0).to(device)
@@ -132,8 +124,11 @@ class Trainer:
             with torch.no_grad():
                 wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
-            self.log_image(img[0].detach().cpu(), f'pred_{i}', step)
-            self.log_wavelet(wavelet[0].detach().cpu(), f'wavelet_pred_{i}', step)
+            out, frames = self.test_dataset.preprocessor.postprocess(img, frame[FrameGroup.INFERENCE.value])
+
+            self.log_wavelet(wavelet[0].detach().cpu(), f'Pred_Wavelet_{i}', step)
+            for key in frames:
+                self.log_image(frames[key][0].detach().cpu(), f'{key}_{i}', step)
 
 
     def log_gt_images(self):
@@ -141,16 +136,13 @@ class Trainer:
         """
 
         for i in self.settings.test_images_idx:
-            frame = self.test_dataset[i]
+            frame = self.test_dataset.get_log_frames(i)
 
-            hr_gt = frame[FrameGroup.HR.value].unsqueeze(0).to(device)
-            wavelet = WaveletProcessor.batch_wt(hr_gt)
-
-            self.log_image(hr_gt[0].detach().cpu(), f'gt_{i}', None)
-            self.log_wavelet(wavelet[0].detach().cpu(), f'wavelet_gt_{i}', None)
-            
-
-    
+            for key in frame:
+                if 'Wavelet' in key:
+                    self.log_wavelet(frame[key].detach().cpu(), f'{key}_{i}', None)
+                else:
+                    self.log_image(frame[key].detach().cpu(), f'{key}_{i}', None)
     
 
     def train(self, num_epochs: int):
@@ -162,6 +154,7 @@ class Trainer:
         
         if self.total_epochs == 0:
             self.log_gt_images()
+            self.log_test_images(0)
 
         train_loader = DataLoader(self.train_dataset, batch_size=self.settings.batch_size, shuffle=True)
         validation_loader = DataLoader(self.validation_dataset, batch_size=self.settings.batch_size, shuffle=False)

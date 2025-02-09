@@ -125,6 +125,20 @@ class ImageUtils:
         image = cv2.imread(image_path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         return image
+    
+    @staticmethod
+    def save_exr_image_opencv(image: np.ndarray, image_path: str) -> None:
+        """Save an image as an .exr file using OpenCV.
+
+        Args:
+            :attr:`image` (np.ndarray): Image to save. Shape (H, W, C).
+            :attr:`image_path` (str): Path to save the .exr image.
+        """
+
+        # Convert the image to OpenCV format
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # Save the image
+        cv2.imwrite(image_path, image)
 
     @staticmethod
     def decode_exr_image_opencv(file_buffer: bytes) -> np.ndarray:
