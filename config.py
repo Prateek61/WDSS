@@ -41,6 +41,13 @@ class Settings:
     
     def log_path(self) -> str:
         return self.get_full_path(self.log_dir)
+    
+    def get_base_path(self) -> str:
+        return self.get_full_path('')
+    
+    def save_config(self):
+        with open(os.path.join(self.get_base_path(), 'config.json'), 'w') as f:
+            json.dump(self._settings, f, indent=4)
 
     def __str__(self):
         return f"Settings: {self.__dict__}"

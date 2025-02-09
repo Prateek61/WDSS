@@ -15,6 +15,7 @@ class Preprocessor:
         self,
         reconstruction_frame_type: str,
         log_scale_pre_tonemapped: bool,
+        pre_tonemapped_normalization_factor: float,
         tonemapper: str,
         log_scale_irridiance: bool,
         irridiance_normalization_factor: float,
@@ -27,6 +28,7 @@ class Preprocessor:
         super(Preprocessor, self).__init__()
         self.reconstruction_frame_type = reconstruction_frame_type
         self.log_scale_pre_tonemapped = log_scale_pre_tonemapped
+        self.pre_tonemapped_normalization_factor = pre_tonemapped_normalization_factor
         self.tonemapper_name = tonemapper
         self.tonemapper = BaseTonemapper.from_name(tonemapper)
         self.log_scale_irridiance = log_scale_irridiance
@@ -62,9 +64,9 @@ class Preprocessor:
             lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
             temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
             if self.log_scale_pre_tonemapped:
-                hr = BRDFProcessor.exponential_normalize(hr)
-                lr = BRDFProcessor.exponential_normalize(lr)
-                temporal = BRDFProcessor.exponential_normalize(temporal)
+                hr = BRDFProcessor.exponential_normalize(hr / self.pre_tonemapped_normalization_factor)
+                lr = BRDFProcessor.exponential_normalize(lr / self.pre_tonemapped_normalization_factor)
+                temporal = BRDFProcessor.exponential_normalize(temporal / self.pre_tonemapped_normalization_factor)
         
         warped_temporal = Mask.warp_frame(
             frame=temporal.unsqueeze(0),
@@ -100,9 +102,9 @@ class Preprocessor:
             lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
             temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
             if self.log_scale_pre_tonemapped:
-                hr = BRDFProcessor.exponential_normalize(hr)
-                lr = BRDFProcessor.exponential_normalize(lr)
-                temporal = BRDFProcessor.exponential_normalize(temporal)
+                hr = BRDFProcessor.exponential_normalize(hr / self.pre_tonemapped_normalization_factor)
+                lr = BRDFProcessor.exponential_normalize(lr / self.pre_tonemapped_normalization_factor)
+                temporal = BRDFProcessor.exponential_normalize(temporal / self.pre_tonemapped_normalization_factor)
         else:
             raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
         
@@ -153,7 +155,7 @@ class Preprocessor:
         elif self.reconstruction_frame_type == 'PreTonemapped':
             res['Pred_PreTonemapped'] = reconstructed
             if self.log_scale_pre_tonemapped:
-                res['Pred_PreTonemapped'] = BRDFProcessor.exponential_denormalize(res['Pred_PreTonemapped'])
+                res['Pred_PreTonemapped'] = BRDFProcessor.exponential_denormalize(res['Pred_PreTonemapped'] * self.pre_tonemapped_normalization_factor)
             res['Pred'] = self.tonemapper(reconstructed)
             res['Pred_PreTonemapped'] = BRDFProcessor.exponential_normalize(res['Pred_PreTonemapped'])
             final = res['Pred']
@@ -191,6 +193,7 @@ class Preprocessor:
         return Preprocessor(
             reconstruction_frame_type=config['reconstruction_frame_type'],
             log_scale_pre_tonemapped=config['log_scale_pre_tonemapped'],
+            pre_tonemapped_normalization_factor=config['pre_tonemapped_normalization_factor'],
             tonemapper=config['tonemapper'],
             log_scale_irridiance=config['log_scale_irridiance'],
             irridiance_normalization_factor=config['irridiance_normalization_factor'],

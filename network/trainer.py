@@ -14,6 +14,7 @@ from .dataset import *
 from utils.wdss_logger import NetworkLogger
 from utils.wavelet import WaveletProcessor
 from config import device, Settings
+import json
 
 from enum import Enum
 import io
@@ -153,6 +154,7 @@ class Trainer:
         """
         
         if self.total_epochs == 0:
+            self.settings.save_config()
             self.log_gt_images()
             self.log_test_images(0)
 
@@ -419,7 +421,7 @@ class Trainer:
 
         self.load_checkpoint('best.pth')
 
-    
+
     def log_losses(self, train_loss: float, all_train_losses: Dict[str, float], val_loss: float, all_val_losses: Dict[str, float], step: int):
         """Log the losses to tensorboard.
         """
