@@ -30,6 +30,8 @@ class Settings:
         self.multi_patches_per_frame: bool = settings["multi_patches_per_frame"]
         self.num_threads: int = settings['num_threads']
         self.model_config: Dict[str, Any] = settings["model_config"]
+        self.preprocessor_config: Dict[str, Any] = settings["preprocessor_config"]
+        self._settings = settings
 
     def get_full_path(self, folder: str) -> str:
         return os.path.join(self.out_dir, f'{self.job_name}-{self.model_name}', folder)
