@@ -189,7 +189,7 @@ class WDSSDatasetCompressed(Dataset):
             for gb_type in GB_Type:
                 res[RawFrameGroup.HR_GB][gb_type] = res[RawFrameGroup.HR_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
                 res[RawFrameGroup.LR_GB][gb_type] = res[RawFrameGroup.LR_GB][gb_type][:, lr_window[0][0]:lr_window[1][0], lr_window[0][1]:lr_window[1][1]]
-            for gb_type in [GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED]:
+            for gb_type in [GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED, GB_Type.DIFFUSE_COLOR, GB_Type.METALLIC_ROUGHNESS_SPECULAR]:
                 res[RawFrameGroup.TEMPORAL_GB][gb_type] = res[RawFrameGroup.TEMPORAL_GB][gb_type][:, hr_window[0][0]:hr_window[1][0], hr_window[0][1]:hr_window[1][1]]
                 
         return res
@@ -231,10 +231,10 @@ class WDSSDatasetCompressed(Dataset):
         res = {}
 
         results: List[AsyncResult] = []
-        for gb_type in [GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED]:
+        for gb_type in [GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED, GB_Type.DIFFUSE_COLOR, GB_Type.METALLIC_ROUGHNESS_SPECULAR]:
             results.append(self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_gbuffer), (frame_idx, zip_ref, base_folder, gb_type, self._get_hr_gb_path(frame_idx, gb_type))))
 
-        for gb_type, result in zip([GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED], results):
+        for gb_type, result in zip([GB_Type.BASE_COLOR, GB_Type.NoV_Depth, GB_Type.NORMAL, GB_Type.PRE_TONEMAPPED, GB_Type.DIFFUSE_COLOR, GB_Type.METALLIC_ROUGHNESS_SPECULAR], results):
             res[gb_type] = result.get()
 
         return res

@@ -41,16 +41,13 @@ class Preprocessor:
                 raise e
 
     def preprocess(self, raw_frames: Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor], upscale_factor: float) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
+        res: Dict[str, torch.Tensor | Dict[str, torch.Tensor]] = {}
+        extra: Dict[str, torch.Tensor] = {}
 
         spatial_mask, temporal_mask = self._spatial_and_temporal_mask(raw_frames, upscale_factor)
 
-        res: Dict[str, torch.Tensor | Dict[str, torch.Tensor]] = {}
-
-        extra: Dict[str, torch.Tensor] = {}
         extra['TemporalMask'] = temporal_mask.squeeze(0)
-        # extra['SpatialMask'] = spatial_mask.squeeze(0)
 
-        # Construct gb
         gb: torch.Tensor = self._gb(raw_frames, spatial_mask)
 
         if self.reconstruction_frame_type == 'Final':
@@ -65,6 +62,35 @@ class Preprocessor:
                 hr = normalizer.normalize(hr)
                 lr = normalizer.normalize(lr)
                 temporal = normalizer.normalize(temporal)
+        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+            pt_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
+            pt_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
+            pt_temp = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
+
+            for normalizer in self.pre_tonemapped_normalizers:
+                pt_hr = normalizer.normalize(pt_hr)
+                pt_lr = normalizer.normalize(pt_lr)
+                pt_temp = normalizer.normalize(pt_temp)
+
+            if self.reconstruction_frame_type == 'IrridianceAlbedo':
+                brdf_map_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.DIFFUSE_COLOR]
+                brdf_map_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.DIFFUSE_COLOR]
+                brdf_map_temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DIFFUSE_COLOR]
+            else:
+                brdf_map_hr, brdf_map_lr = self._brdf(raw_frames)
+                brdf_map_temporal = self._brdf_temporal(raw_frames)
+
+            hr = BRDFProcessor.brdf_demodulate(pt_hr, brdf_map_hr)
+            lr = BRDFProcessor.brdf_demodulate(pt_lr, brdf_map_lr)
+            temporal = BRDFProcessor.brdf_demodulate(pt_temp, brdf_map_temporal)
+
+            for normalizer in self.irridiance_normalizers:
+                hr = normalizer.normalize(hr)
+                lr = normalizer.normalize(lr)
+                temporal = normalizer.normalize(temporal)
+
+        else:
+            raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
         
         warped_temporal = Mask.warp_frame(
             frame=temporal.unsqueeze(0),
@@ -103,6 +129,34 @@ class Preprocessor:
                 hr = normalizer.normalize(hr)
                 lr = normalizer.normalize(lr)
                 temporal = normalizer.normalize(temporal)
+        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+            pt_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
+            pt_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
+            pt_temp = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
+
+            for normalizer in self.pre_tonemapped_normalizers:
+                pt_hr = normalizer.normalize(pt_hr)
+                pt_lr = normalizer.normalize(pt_lr)
+                pt_temp = normalizer.normalize(pt_temp)
+
+            if self.reconstruction_frame_type == 'IrridianceAlbedo':
+                brdf_map_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.DIFFUSE_COLOR]
+                brdf_map_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.DIFFUSE_COLOR]
+                brdf_map_temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DIFFUSE_COLOR]
+            else:
+                brdf_map_hr, brdf_map_lr = self._brdf(raw_frames)
+                brdf_map_temporal = self._brdf_temporal(raw_frames)
+
+            inference['BRDF_HR'] = brdf_map_hr
+            hr = BRDFProcessor.brdf_demodulate(pt_hr, brdf_map_hr)
+            lr = BRDFProcessor.brdf_demodulate(pt_lr, brdf_map_lr)
+            temporal = BRDFProcessor.brdf_demodulate(pt_temp, brdf_map_temporal)
+
+            for normalizer in self.irridiance_normalizers:
+                hr = normalizer.normalize(hr)
+                lr = normalizer.normalize(lr)
+                temporal = normalizer.normalize(temporal)
+
         else:
             raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
         
@@ -130,16 +184,46 @@ class Preprocessor:
             res['LR'] = raw_frames[RawFrameGroup.LR]
             res['HRWavelet'] = WaveletProcessor.wavelet_transform_image(res['HR'])
             res['LRWavelet'] = WaveletProcessor.wavelet_transform_image(res['LR'])
-        elif self.reconstruction_frame_type == 'PreTonemapped':
-            res['PreTonemappedHR'] = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
-            res['PreTonemappedLR'] = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
-            res['HR'] = self.tonemapper(res['PreTonemappedHR'])
-            res['LR'] = self.tonemapper(res['PreTonemappedLR'])
-            res['PreTonemappedHR'] = BRDFProcessor.exponential_normalize(res['PreTonemappedHR'])
-            res['PreTonemappedLR'] = BRDFProcessor.exponential_normalize(res['PreTonemappedLR'])
-            res['HRWavelet'] = WaveletProcessor.wavelet_transform_image(res['PreTonemappedHR'])
-            res['LRWavelet'] = WaveletProcessor.wavelet_transform_image(res['PreTonemappedLR'])
-        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+        elif self.reconstruction_frame_type in ['PreTonemapped', 'Irridiance', 'IrridianceAlbedo']:
+            pt_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
+            pt_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
+
+            if self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+                pt_hr_norm = pt_hr
+                pt_lr_norm = pt_lr
+                for normalizer in self.pre_tonemapped_normalizers:
+                    pt_hr_norm = normalizer.normalize(pt_hr_norm)
+                    pt_lr_norm = normalizer.normalize(pt_lr_norm)
+
+                if self.reconstruction_frame_type == 'IrridianceAlbedo':
+                    brdf_map_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.DIFFUSE_COLOR]
+                    brdf_map_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.DIFFUSE_COLOR]
+                else:
+                    brdf_map_hr, brdf_map_lr = self._brdf(raw_frames)
+                
+                res['BRDF_HR'] = brdf_map_hr
+                res['BRDF_LR'] = brdf_map_lr
+
+                irr_hr = BRDFProcessor.brdf_demodulate(pt_hr_norm, brdf_map_hr)
+                irr_lr = BRDFProcessor.brdf_demodulate(pt_lr_norm, brdf_map_lr)
+
+                res['IrridianceHR'] = self.exponential_normalizer.normalize(irr_hr)
+                res['IrridianceLR'] = self.exponential_normalizer.normalize(irr_lr)
+
+                to_wt_hr = irr_hr
+                to_wt_lr = irr_lr
+                for normalizer in self.irridiance_normalizers:
+                    to_wt_hr = normalizer.normalize(to_wt_hr)
+                    to_wt_lr = normalizer.normalize(to_wt_lr)
+            else:
+                to_wt_hr = pt_hr
+                to_wt_lr = pt_lr
+
+            res['PreTonemappedHR'] = pt_hr
+            res['PreTonemappedLR'] = pt_lr
+            res['HRWavelet'] = WaveletProcessor.wavelet_transform_image(to_wt_hr)
+            res['LRWavelet'] = WaveletProcessor.wavelet_transform_image(to_wt_lr)
+        else:
             raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
 
         return res
@@ -147,6 +231,7 @@ class Preprocessor:
     def postprocess(self, reconstructed: torch.Tensor, inference_buffers: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         res: Dict[str, torch.Tensor] = {}
         final = reconstructed
+        device = reconstructed.device
 
         if self.reconstruction_frame_type == 'Final':
             res['Pred'] = reconstructed
@@ -156,6 +241,18 @@ class Preprocessor:
                 pre_tonemapped = normalizer.denormalize(pre_tonemapped)
             res['Pred'] = self.tonemapper(pre_tonemapped)
             res['Pred_PreTonemapped'] = self.exponential_normalizer.normalize(pre_tonemapped)
+            final = res['Pred_PreTonemapped']
+        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+            irr = reconstructed
+            for normalizer in reversed(self.irridiance_normalizers):
+                irr = normalizer.denormalize(irr)
+            res['Pred_Irridiance'] = self.exponential_normalizer.normalize(irr)
+            pt = BRDFProcessor.brdf_remodulate(irr, inference_buffers['BRDF_HR'].to(device))
+            for normalizer in reversed(self.pre_tonemapped_normalizers):
+                pt = normalizer.denormalize(pt)
+            res['Pred_PreTonemapped'] = self.tonemapper(pt)
+            res['Pred'] = self.tonemapper(pt)
+            final = res['Pred_Irridiance']
         else:
             raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
         
@@ -184,6 +281,36 @@ class Preprocessor:
         gb = torch.cat([gb, raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR]], dim=0)
         gb = torch.cat([gb, spatial_mask.squeeze(0)], dim=0)
         return gb
+    
+    def _brdf(self, raw_frames: Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        return BRDFProcessor.compute_brdf(
+            diffuse=raw_frames[RawFrameGroup.HR_GB][GB_Type.DIFFUSE_COLOR],
+            roughness = raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][1:2, :, :],
+            metallic = raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][0:1, :, :],
+            specular = raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][2:3, :, :],
+            NoV = raw_frames[RawFrameGroup.HR_GB][GB_Type.NoV_Depth][0:1, :, :],
+            precomp = self._precomp,
+            max_idx = 511
+        ), BRDFProcessor.compute_brdf(
+            diffuse=raw_frames[RawFrameGroup.LR_GB][GB_Type.DIFFUSE_COLOR],
+            roughness = raw_frames[RawFrameGroup.LR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][1:2, :, :],
+            metallic = raw_frames[RawFrameGroup.LR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][0:1, :, :],
+            specular = raw_frames[RawFrameGroup.LR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][2:3, :, :],
+            NoV = raw_frames[RawFrameGroup.LR_GB][GB_Type.NoV_Depth][0:1, :, :],
+            precomp = self._precomp,
+            max_idx = 511
+        )
+
+    def _brdf_temporal(self, raw_frames: Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]) -> torch.Tensor:
+        return BRDFProcessor.compute_brdf(
+            diffuse=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DIFFUSE_COLOR],
+            roughness = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][1:2, :, :],
+            metallic = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][0:1, :, :],
+            specular = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][2:3, :, :],
+            NoV = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NoV_Depth][0:1, :, :],
+            precomp = self._precomp,
+            max_idx = 511
+        )
 
     @staticmethod
     def from_config(config: Dict[str, Any]) -> 'Preprocessor':

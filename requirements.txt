@@ -9,3 +9,4 @@ ptwt
 PyWavelets
 tqdm # for progress bars
 tensorboard # for logging
+pandas

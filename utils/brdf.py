@@ -12,7 +12,7 @@ class BRDFProcessor:
         specular: torch.Tensor,
         NoV: torch.Tensor,
         precomp: torch.Tensor,
-        max_idx: int = 255
+        max_idx: int = 511
     ) -> torch.Tensor:
         nov_idx = (NoV * max_idx).long().clamp(0, max_idx)
         roughness_idx = (roughness * max_idx).long().clamp(0, max_idx)
