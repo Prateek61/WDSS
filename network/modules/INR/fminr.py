@@ -7,6 +7,7 @@ from .fourier_mapping import FourierMapping, SimpleMapping
 from .wire import WIRE2D    
 from .siren import Siren
 from .bwspline import BWSpline
+from .frinr import FrINR
 
 from typing import List, Dict, Any
 
@@ -25,6 +26,8 @@ def get_inr(config: Dict[str, Any]) -> nn.Module:
         return Siren.from_config(config)
     elif config['type'] == 'bspline' and config['version'] == 1.0:
         return BWSpline.from_config(config)
+    elif config['type'] == 'frinr' and config['version'] == 1.0:
+        return FrINR.from_config(config)
     else:
         assert False, f"Unknown config: {config}"
     
