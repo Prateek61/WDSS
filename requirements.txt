@@ -7,6 +7,5 @@ torchmetrics
 # Wavelets
 ptwt
 PyWavelets
-ptwt
 tqdm # for progress bars
 tensorboard # for logging
