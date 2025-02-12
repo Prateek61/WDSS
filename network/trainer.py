@@ -19,6 +19,8 @@ from enum import Enum
 import io
 
 from typing import Dict, Tuple , Any
+import json
+import cpuinfo
 
 class Trainer:
     def __init__(self, settings: Settings, 
@@ -653,4 +655,48 @@ class Trainer:
                 save_image(hr_wavelet_img, f"{save_dir}/hr_wavelet_{label.lower()}.png")
                 save_image(pred_wavelet_img, f"{save_dir}/pred_wavelet_{label.lower()}.png")
 
+    def profile_performance(self):
 
+        frame = self.test_dataset[0]
+        lr_frame = frame[FrameGroup.LR.value].unsqueeze(0).to(device)
+        gb_buffer = frame[FrameGroup.GB.value].unsqueeze(0).to(device)
+        temporal_frame = frame[FrameGroup.TEMPORAL.value].unsqueeze(0).to(device)
+
+        with torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(self.settings.log_path()),
+            record_shapes=True,
+            with_stack=True,
+            profile_memory=True
+        ) as profiler:
+            for _ in range(5):  # Run multiple steps to collect profiling data)
+                with torch.no_grad():
+                    self.model.forward(lr_frame, gb_buffer, temporal_frame, 2.0)
+                profiler.step()
+
+        # Collect profiling results
+        profiler_results = profiler.key_averages().table(sort_by="cuda_time_total")
+
+
+        # Save profiling results to a file
+        profiler_results_path = os.path.join(self.settings.log_path(), 'profiler_results.txt')
+        with open(profiler_results_path, 'w') as f:
+            f.write("Profiler Results:\n")
+            f.write(profiler_results)
+
+            # Save device details
+            device_details = {
+                "device_id": str(device),
+                "device_name": torch.cuda.get_device_name(device) if torch.cuda.is_available() else "CPU",
+                "total_memory": torch.cuda.get_device_properties(device).total_memory if torch.cuda.is_available() else "N/A",
+                "memory_allocated": torch.cuda.memory_allocated(device) if torch.cuda.is_available() else "N/A",
+                "memory_reserved": torch.cuda.memory_reserved(device) if torch.cuda.is_available() else "N/A",
+                "cpu_name": cpuinfo.get_cpu_info()['brand_raw'],
+                "cpu_architecture": cpuinfo.get_cpu_info()['arch'],
+                "cpu_cores": cpuinfo.get_cpu_info()['count'],
+                "cpu_threads": os.cpu_count()
+            }
+
+            f.write("\n\nDevice Details:\n")
+            json.dump(device_details, f, indent=4)
