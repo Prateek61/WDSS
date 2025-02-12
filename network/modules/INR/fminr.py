@@ -6,6 +6,7 @@ from .wire import WIRE2D
 from .fourier_mapping import FourierMapping, SimpleMapping
 from .wire import WIRE2D    
 from .siren import Siren
+from .frinr import FrINR
 
 from typing import List, Dict, Any
 
@@ -22,6 +23,8 @@ def get_inr(config: Dict[str, Any]) -> nn.Module:
         return WIRE2D.from_config(config)
     elif config['type'] == 'siren' and config['version'] == 1.0:
         return Siren.from_config(config)
+    elif config['type'] == 'frinr' and config['version'] == 1.0:
+        return FrINR.from_config(config)
     else:
         assert False, f"Unknown config: {config}"
     
