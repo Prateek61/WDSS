@@ -54,7 +54,6 @@ class Preprocessor:
         # Construct gb
         gb: torch.Tensor = self._gb(raw_frames, spatial_mask)
 
-
         if self.reconstruction_frame_type == 'Final':
             hr = raw_frames[RawFrameGroup.HR]
             lr = raw_frames[RawFrameGroup.LR]
@@ -72,7 +71,7 @@ class Preprocessor:
             frame=temporal.unsqueeze(0),
             motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_Type.MOTION_VECTOR].unsqueeze(0)
         )
-        temporal = torch.cat([temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
+        temporal = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
 
         res[FrameGroup.TEMPORAL.value] = temporal
         res[FrameGroup.GB.value] = gb
@@ -112,7 +111,7 @@ class Preprocessor:
             frame=temporal.unsqueeze(0),
             motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_Type.MOTION_VECTOR].unsqueeze(0)
         )
-        temporal = torch.cat([temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
+        temporal = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
 
         res[FrameGroup.TEMPORAL.value] = temporal
         res[FrameGroup.GB.value] = gb
