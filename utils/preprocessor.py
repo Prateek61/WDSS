@@ -7,18 +7,17 @@ from utils.masks import Mask
 from .image_utils import ImageUtils
 from .brdf import BRDFProcessor
 from .wavelet import WaveletProcessor
+from .imge_normalizer import BaseImageNormalizer
 
-from typing import Dict, Any, Union, Tuple
+from typing import Dict, Any, Union, Tuple, List
 
 class Preprocessor:
     def __init__(
         self,
         reconstruction_frame_type: str,
-        log_scale_pre_tonemapped: bool,
-        pre_tonemapped_normalization_factor: float,
+        pre_tonemapped_normalizers: List[Dict[str, Any]], # List of 
         tonemapper: str,
-        log_scale_irridiance: bool,
-        irridiance_normalization_factor: float,
+        irridiance_normalizers: List[Dict[str, Any]],
         spatial_mask_threasholds: Dict[str, float] = {
             'depth': 0.04,
             'normal': 0.4,
@@ -27,13 +26,13 @@ class Preprocessor:
     ):
         super(Preprocessor, self).__init__()
         self.reconstruction_frame_type = reconstruction_frame_type
-        self.log_scale_pre_tonemapped = log_scale_pre_tonemapped
-        self.pre_tonemapped_normalization_factor = pre_tonemapped_normalization_factor
         self.tonemapper_name = tonemapper
         self.tonemapper = BaseTonemapper.from_name(tonemapper)
-        self.log_scale_irridiance = log_scale_irridiance
-        self.irridiance_normalization_factor = irridiance_normalization_factor
         self.spatial_mask_threasholds = spatial_mask_threasholds
+
+        self.exponential_normalizer = BaseImageNormalizer.from_config({'type': 'exponential'})
+        self.pre_tonemapped_normalizers = [BaseImageNormalizer.from_config(config) for config in pre_tonemapped_normalizers]
+        self.irridiance_normalizers = [BaseImageNormalizer.from_config(config) for config in irridiance_normalizers]
 
         try:
             self._precomp = ImageUtils.opencv_image_to_tensor(ImageUtils.load_exr_image_opencv('res/Precomputed.exr')).squeeze(0)
@@ -62,10 +61,10 @@ class Preprocessor:
             hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
             lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
             temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
-            if self.log_scale_pre_tonemapped:
-                hr = BRDFProcessor.exponential_normalize(hr / self.pre_tonemapped_normalization_factor)
-                lr = BRDFProcessor.exponential_normalize(lr / self.pre_tonemapped_normalization_factor)
-                temporal = BRDFProcessor.exponential_normalize(temporal / self.pre_tonemapped_normalization_factor)
+            for normalizer in self.pre_tonemapped_normalizers:
+                hr = normalizer.normalize(hr)
+                lr = normalizer.normalize(lr)
+                temporal = normalizer.normalize(temporal)
         
         warped_temporal = Mask.warp_frame(
             frame=temporal.unsqueeze(0),
@@ -100,10 +99,10 @@ class Preprocessor:
             hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
             lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
             temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
-            if self.log_scale_pre_tonemapped:
-                hr = BRDFProcessor.exponential_normalize(hr / self.pre_tonemapped_normalization_factor)
-                lr = BRDFProcessor.exponential_normalize(lr / self.pre_tonemapped_normalization_factor)
-                temporal = BRDFProcessor.exponential_normalize(temporal / self.pre_tonemapped_normalization_factor)
+            for normalizer in self.pre_tonemapped_normalizers:
+                hr = normalizer.normalize(hr)
+                lr = normalizer.normalize(lr)
+                temporal = normalizer.normalize(temporal)
         else:
             raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
         
@@ -152,12 +151,11 @@ class Preprocessor:
         if self.reconstruction_frame_type == 'Final':
             res['Pred'] = reconstructed
         elif self.reconstruction_frame_type == 'PreTonemapped':
-            res['Pred_PreTonemapped'] = reconstructed
-            if self.log_scale_pre_tonemapped:
-                res['Pred_PreTonemapped'] = BRDFProcessor.exponential_denormalize(res['Pred_PreTonemapped'] * self.pre_tonemapped_normalization_factor)
-            res['Pred'] = self.tonemapper(reconstructed)
-            res['Pred_PreTonemapped'] = BRDFProcessor.exponential_normalize(res['Pred_PreTonemapped'])
-            final = res['Pred']
+            pre_tonemapped = reconstructed
+            for normalizer in reversed(self.pre_tonemapped_normalizers):
+                pre_tonemapped = normalizer.denormalize(pre_tonemapped)
+            res['Pred'] = self.tonemapper(pre_tonemapped)
+            res['Pred_PreTonemapped'] = self.exponential_normalizer.normalize(pre_tonemapped)
         else:
             raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
         
@@ -191,10 +189,8 @@ class Preprocessor:
     def from_config(config: Dict[str, Any]) -> 'Preprocessor':
         return Preprocessor(
             reconstruction_frame_type=config['reconstruction_frame_type'],
-            log_scale_pre_tonemapped=config['log_scale_pre_tonemapped'],
-            pre_tonemapped_normalization_factor=config['pre_tonemapped_normalization_factor'],
             tonemapper=config['tonemapper'],
-            log_scale_irridiance=config['log_scale_irridiance'],
-            irridiance_normalization_factor=config['irridiance_normalization_factor'],
-            spatial_mask_threasholds=config['spatial_mask_threasholds']
+            spatial_mask_threasholds=config['spatial_mask_threasholds'],
+            pre_tonemapped_normalizers=config['pre_tonemapped_normalizers'],
+            irridiance_normalizers=config['irridiance_normalizers']
         )
