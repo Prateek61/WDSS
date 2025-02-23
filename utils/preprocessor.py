@@ -221,6 +221,8 @@ class Preprocessor:
 
             res['PreTonemappedHR'] = pt_hr
             res['PreTonemappedLR'] = pt_lr
+            res['HR'] = self.tonemapper(raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED])
+            res['LR'] = self.tonemapper(raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED])
             res['HRWavelet'] = WaveletProcessor.wavelet_transform_image(to_wt_hr)
             res['LRWavelet'] = WaveletProcessor.wavelet_transform_image(to_wt_lr)
         else:
@@ -252,7 +254,7 @@ class Preprocessor:
                 pt = normalizer.denormalize(pt)
             res['Pred_PreTonemapped'] = self.tonemapper(pt)
             res['Pred'] = self.tonemapper(pt)
-            final = res['Pred_Irridiance']
+            final = res['Pred']
         else:
             raise NotImplementedError(f"Reconstruction frame type {self.reconstruction_frame_type} not supported.")
         

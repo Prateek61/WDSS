@@ -18,8 +18,10 @@ class BRDFProcessor:
         roughness_idx = (roughness * max_idx).long().clamp(0, max_idx)
 
         # Sample the pre-computed BRDF lookup table
-        pre_integration = precomp[0][nov_idx, roughness_idx]
-        pre_integration_b = precomp[1][nov_idx, roughness_idx]
+        # pre_integration = precomp[0][nov_idx, roughness_idx]
+        # pre_integration_b = precomp[1][nov_idx, roughness_idx]
+        pre_integration = precomp[0][roughness_idx, nov_idx]
+        pre_integration_b = precomp[1][roughness_idx, nov_idx]
 
         # Compute specular reflactance
         specular = specular.expand(3, -1, -1)
@@ -46,7 +48,7 @@ class BRDFProcessor:
         frame: torch.Tensor,
         brdf_map: torch.Tensor
     ) -> torch.Tensor:
-        demodulated_frame = torch.where(brdf_map < 0.004, 0, frame / brdf_map)
+        demodulated_frame = torch.where(brdf_map < 1e-6, frame, frame / brdf_map)
         return demodulated_frame
     
     @staticmethod
@@ -54,5 +56,5 @@ class BRDFProcessor:
         frame: torch.Tensor,
         brdf_map: torch.Tensor
     ) -> torch.Tensor:
-        remodulated_frame = torch.where(brdf_map < 0.004, 0, frame * brdf_map)
+        remodulated_frame = torch.where(brdf_map < 1e-6, frame, frame * brdf_map)
         return remodulated_frame
