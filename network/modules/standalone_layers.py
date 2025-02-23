@@ -78,3 +78,16 @@ class LightWeightGatedConv2D(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.feature(x) * self.gate(x)
+    
+    
+class doubleResidualConv(nn.Module):
+    def __init__(self,outc,kernel_size=3,padding=1):
+        super(doubleResidualConv,self).__init__()
+        self.conv=nn.Sequential(
+            nn.Conv2d(outc,outc,kernel_size=kernel_size,padding=padding),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(outc,outc,kernel_size=kernel_size,padding=padding),
+            nn.ReLU(inplace=True)
+        )
+    def forward(self,x):
+        return self.conv(x)+x
