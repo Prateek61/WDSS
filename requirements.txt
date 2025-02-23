@@ -10,4 +10,4 @@ PyWavelets
 tqdm # for progress bars
 tensorboard # for logging
 pandas
-cpuinfo # for logging
+py-cpuinfo
