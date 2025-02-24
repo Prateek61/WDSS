@@ -47,10 +47,6 @@ class WDSS(ModelBase):
         )
 
     def forward(self, lr_frame: torch.Tensor, hr_gbuffer: torch.Tensor, temporal: torch.Tensor, upscale_factor: float) -> torch.Tensor:
-        # Time every operation in the forward pass
-        torch.cuda.synchronize()
-        start_time = datetime.now()
-
         # Pixel unshuffle
         lr_frame_ps = F.pixel_unshuffle(lr_frame, 2)
         hr_gbuffer_ps = F.pixel_unshuffle(hr_gbuffer, 2)
@@ -81,7 +77,11 @@ class WDSS(ModelBase):
         if self.has_feature_fusion:
             lr_ff_upsampled = ImageUtils.upsample(lr_ff, upscale_factor)
             ff_out = self.fusion(torch.cat([lr_ff_upsampled, gb_ff, temporal_feat], dim=1))
-            wavelet_out = wavelet_out + ff_out if self.has_fminr else ff_out
+
+            if self.has_fminr:
+                wavelet_out = wavelet_out + ff_out
+            else:
+                wavelet_out = ff_out
         
         if self.sum_lr_wavelet:
             lr_wavelet = WaveletProcessor.batch_wt(lr_frame)
