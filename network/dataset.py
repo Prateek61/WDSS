@@ -169,7 +169,7 @@ class WDSSDatasetCompressed(Dataset):
             temporal_frame_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_hr_frame), (frame_idx - 1, zip_ref, base_folder))
             hr_gbuffer_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_hr_g_buffers), (frame_idx, zip_ref, base_folder))
             lr_gbuffer_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_lr_g_buffers), (frame_idx, zip_ref, base_folder))
-            temporal_gbuffer_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_temporal_g_buffers), (frame_idx, zip_ref, base_folder))
+            temporal_gbuffer_res = self.thread_pool.apply_async(DatasetUtils.wrap_try(self._get_temporal_g_buffers), (frame_idx - 1, zip_ref, base_folder))
 
             res[RawFrameGroup.HR_GB] = hr_gbuffer_res.get()
             res[RawFrameGroup.LR_GB] = lr_gbuffer_res.get()

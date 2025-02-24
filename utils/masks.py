@@ -138,6 +138,8 @@ class Mask:
         n, c, h, w = frame.shape
         device = frame.device
 
+        motion_vector *= -1.0
+
         # Create normalized coordinate grid
         dx = torch.linspace(-1.0, 1.0, w, device=device)
         dy = torch.linspace(-1.0, 1.0, h, device=device)
