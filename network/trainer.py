@@ -71,6 +71,8 @@ class Trainer:
         # Forward pass
         wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
+        del lr_inp, gb_inp, temporal_inp
+
         # Calculate the loss
         total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
 

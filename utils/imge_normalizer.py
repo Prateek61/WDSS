@@ -10,11 +10,11 @@ class BaseImageNormalizer(ABC):
         ...
 
     @abstractmethod
-    def normalize(self, x: torch.Tensor):
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
     
     @abstractmethod
-    def denormalize(self, x: torch.Tensor):
+    def denormalize(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
     
     @staticmethod

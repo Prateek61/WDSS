@@ -76,6 +76,10 @@ class Preprocessor:
                 brdf_map_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.DIFFUSE_COLOR]
                 brdf_map_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.DIFFUSE_COLOR]
                 brdf_map_temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DIFFUSE_COLOR]
+            elif self.reconstruction_frame_type == 'IrridianceExtranet':
+                brdf_map_hr = self._brdf_extranet(raw_frames[RawFrameGroup.HR_GB])
+                brdf_map_lr = self._brdf_extranet(raw_frames[RawFrameGroup.LR_GB])
+                brdf_map_temporal = self._brdf_extranet(raw_frames[RawFrameGroup.TEMPORAL_GB])
             else:
                 brdf_map_hr, brdf_map_lr = self._brdf(raw_frames)
                 brdf_map_temporal = self._brdf_temporal(raw_frames)
@@ -143,6 +147,10 @@ class Preprocessor:
                 brdf_map_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.DIFFUSE_COLOR]
                 brdf_map_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.DIFFUSE_COLOR]
                 brdf_map_temporal = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.DIFFUSE_COLOR]
+            elif self.reconstruction_frame_type == 'IrridianceExtranet':
+                brdf_map_hr = self._brdf_extranet(raw_frames[RawFrameGroup.HR_GB])
+                brdf_map_lr = self._brdf_extranet(raw_frames[RawFrameGroup.LR_GB])
+                brdf_map_temporal = self._brdf_extranet(raw_frames[RawFrameGroup.TEMPORAL_GB])
             else:
                 brdf_map_hr, brdf_map_lr = self._brdf(raw_frames)
                 brdf_map_temporal = self._brdf_temporal(raw_frames)
@@ -184,11 +192,11 @@ class Preprocessor:
             res['LR'] = raw_frames[RawFrameGroup.LR]
             res['HRWavelet'] = WaveletProcessor.wavelet_transform_image(res['HR'])
             res['LRWavelet'] = WaveletProcessor.wavelet_transform_image(res['LR'])
-        elif self.reconstruction_frame_type in ['PreTonemapped', 'Irridiance', 'IrridianceAlbedo']:
+        elif self.reconstruction_frame_type in ['PreTonemapped', 'Irridiance', 'IrridianceAlbedo', 'IrridianceExtranet']:
             pt_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
             pt_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
 
-            if self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+            if self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo', 'IrridianceExtranet']:
                 pt_hr_norm = pt_hr
                 pt_lr_norm = pt_lr
                 for normalizer in self.pre_tonemapped_normalizers:
@@ -198,6 +206,9 @@ class Preprocessor:
                 if self.reconstruction_frame_type == 'IrridianceAlbedo':
                     brdf_map_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.DIFFUSE_COLOR]
                     brdf_map_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.DIFFUSE_COLOR]
+                elif self.reconstruction_frame_type == 'IrridianceExtranet':
+                    brdf_map_hr = self._brdf_extranet(raw_frames[RawFrameGroup.HR_GB])
+                    brdf_map_lr = self._brdf_extranet(raw_frames[RawFrameGroup.LR_GB])
                 else:
                     brdf_map_hr, brdf_map_lr = self._brdf(raw_frames)
                 
@@ -312,6 +323,13 @@ class Preprocessor:
             NoV = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.NoV_Depth][0:1, :, :],
             precomp = self._precomp,
             max_idx = 511
+        )
+    
+    def _brdf_extranet(self, gb: Dict[GB_Type, torch.Tensor]) -> torch.Tensor:
+        return BRDFProcessor.compute_brdf_extranet(
+            base_color=gb[GB_Type.BASE_COLOR],
+            specular=gb[GB_Type.METALLIC_ROUGHNESS_SPECULAR][2:3, :, :],
+            metallic=gb[GB_Type.METALLIC_ROUGHNESS_SPECULAR][0:1, :, :]
         )
 
     @staticmethod

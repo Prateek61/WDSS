@@ -152,17 +152,14 @@ class L1Norm(nn.Module):
         return torch.sum(torch.abs(prediction - target)) / torch.numel(prediction)
     
 class CriterionSSIM_L1(CriterionBase):
-    def __init__(self, weights: Dict[str, float] = {}):
+    def __init__(self, weights: Dict[str, float] = {
+        'ssim_image': 0.1,
+        'ssim_wavelets': 0.1,
+        'l1_image': 0.5,
+        'l1_wavelets': 0.5
+    }):
         super(CriterionSSIM_L1, self).__init__()
-        if not weights:
-            self.weights = {
-                'ssim_image': 0.1,
-                'ssim_wavelets': 0.1,
-                'l1_image': 0.5,
-                'l1_wavelets': 0.5
-            }
-        else:
-            self.weights = weights
+        self.weights = weights
 
         self.ssim = SSIM().to(device)
         self.l1 = L1Norm().to(device)
@@ -188,17 +185,14 @@ class CriterionSSIM_L1(CriterionBase):
 
 
 class CriterionSSIM_SmooothL1(CriterionBase):
-    def __init__ (self, weights: Dict[str, float] = {}):
+    def __init__ (self, weights: Dict[str, float] = {
+        'ssim_image': 0.1,
+        'ssim_wavelets': 0.1,
+        'smooth_l1_image': 0.5,
+        'smooth_l1_wavelets': 0.5
+    }):
         super(CriterionSSIM_SmooothL1, self).__init__()
-        if not weights:
-            self.weights = {
-                'ssim_image': 0.1,
-                'ssim_wavelets': 0.1,
-                'smooth_l1_image': 0.5,
-                'smooth_l1_wavelets': 0.5
-            }
-        else:
-            self.weights = weights
+        self.weights = weights
 
         self.ssim = SSIM().to(device)
         self.smooth_l1 = nn.SmoothL1Loss().to(device)
@@ -270,7 +264,6 @@ class Criterion_Combined(nn.Module):
         losses['ssim_loss_hor'] = ssim_loss_hor
         losses['ssim_loss_ver'] = ssim_loss_ver
         losses['ssim_loss_diag'] = ssim_loss_diag
-        losses['total_loss'] = total_loss
 
         return total_loss, losses
 
