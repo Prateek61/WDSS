@@ -62,7 +62,7 @@ class Preprocessor:
                 hr = normalizer.normalize(hr)
                 lr = normalizer.normalize(lr)
                 temporal = normalizer.normalize(temporal)
-        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo', 'IrridianceExtranet']:
             pt_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
             pt_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
             pt_temp = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
@@ -133,7 +133,7 @@ class Preprocessor:
                 hr = normalizer.normalize(hr)
                 lr = normalizer.normalize(lr)
                 temporal = normalizer.normalize(temporal)
-        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo', 'IrridianceExtranet']:
             pt_hr = raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED]
             pt_lr = raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED]
             pt_temp = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.PRE_TONEMAPPED]
@@ -255,7 +255,7 @@ class Preprocessor:
             res['Pred'] = self.tonemapper(pre_tonemapped)
             res['Pred_PreTonemapped'] = self.exponential_normalizer.normalize(pre_tonemapped)
             final = res['Pred_PreTonemapped']
-        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo']:
+        elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo', 'IrridianceExtranet']:
             irr = reconstructed
             for normalizer in reversed(self.irridiance_normalizers):
                 irr = normalizer.denormalize(irr)
