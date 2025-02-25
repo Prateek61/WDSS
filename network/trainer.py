@@ -71,10 +71,13 @@ class Trainer:
         # Forward pass
         wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
-        del lr_inp, gb_inp, temporal_inp
+        # del lr_inp, gb_inp, temporal_inp
+
+        hr_processed = self.train_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
+        img_processed = self.train_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
 
         # Calculate the loss
-        total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
+        total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img_processed, hr_processed)
 
         # Backward pass
         total_loss.backward()
@@ -104,6 +107,9 @@ class Trainer:
         # Forward pass
         with torch.no_grad():
             wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
+
+            hr_processed = self.validation_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
+            img_processed = self.validation_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
 
             # Calculate the loss
             total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)

@@ -9,7 +9,7 @@ device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cp
 class Settings:
     def __init__(self, settings_path: str = "config/config.json", model_name: str = "WDSS"):
         with open(settings_path, "r") as f:
-            settings = json.load(f)
+            settings: Dict = json.load(f)
         self.job_name: str = settings["job_name"]
         self.out_dir: str = settings["out_dir"]
         self.model_dir: str = settings["model_dir"]
@@ -17,7 +17,7 @@ class Settings:
         self.train_dir: str = settings["train_dir"]
         self.val_dir: str = settings["val_dir"]
         self.test_dir: str = settings["test_dir"]
-        self.thread_datasets = settings["thread_datasets"]
+        self.thread_datasets = settings.get("thread_datasets", True)
         self.model_name: str = model_name
         self.frames_per_zip: int = settings["frames_per_zip"]
         self.patched: bool = settings["patched"]

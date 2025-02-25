@@ -24,6 +24,10 @@ class BaseTonemapper(nn.Module):
             tonemapper_class = ReinhardTonemapper
         elif name == 'Hable':
             tonemapper_class = HableTonemapper
+        elif name == 'SRGBHable':
+            tonemapper_class = SRGBHable
+        elif name == 'SRGB':
+            tonemapper_class = SRGBTonemapper
         else:
             raise ValueError(f"Tonemapper {name} not supported.")
         
@@ -64,4 +68,25 @@ class HableTonemapper(BaseTonemapper):
         white_scale = 1.0 / self._tonemap_partial(w)
         res =  x * white_scale
         return res.clamp(0.0, 1.0)
+    
+class SRGBHable(BaseTonemapper):
+    def __init__(self, gain: float = 2.0):
+        super(SRGBHable, self).__init__()
+        self.habel = HableTonemapper(gain)
+        self.gamma = 2.2
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.pow(1.0 / self.gamma)
+        x = self.habel(x)
+        return x.clamp(0.0, 1.0)
+    
+class SRGBTonemapper(BaseTonemapper):
+    def __init__(self, gain: float = 2.0):
+        super(SRGBTonemapper, self).__init__()
+        self.gain = gain
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x * self.gain
+        x = x.pow(1.0 / 2.2)
+        return x.clamp(0.0, 1.0)
     

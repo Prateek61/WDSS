@@ -81,13 +81,13 @@ class LightWeightGatedConv2D(nn.Module):
     
     
 class doubleResidualConv(nn.Module):
-    def __init__(self,outc,kernel_size=3,padding=1):
+    def __init__(self, outc: int, kernel_size: int = 3, padding: int = 1):
         super(doubleResidualConv,self).__init__()
         self.conv=nn.Sequential(
             nn.Conv2d(outc,outc,kernel_size=kernel_size,padding=padding),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Conv2d(outc,outc,kernel_size=kernel_size,padding=padding),
-            nn.ReLU(inplace=True)
+            nn.ReLU()
         )
     def forward(self,x):
-        return self.conv(x)+x
+        return self.conv(x) + x
