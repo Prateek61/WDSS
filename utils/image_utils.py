@@ -136,7 +136,7 @@ class ImageUtils:
         """
 
         # Convert the image to OpenCV format
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        image = cv2.cvtColor(image, cv2.COLOR_RGBA2BGRA)
         # Save the image
         cv2.imwrite(image_path, image)
 

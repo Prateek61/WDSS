@@ -17,6 +17,7 @@ class Settings:
         self.train_dir: str = settings["train_dir"]
         self.val_dir: str = settings["val_dir"]
         self.test_dir: str = settings["test_dir"]
+        self.thread_datasets = settings["thread_datasets"]
         self.model_name: str = model_name
         self.frames_per_zip: int = settings["frames_per_zip"]
         self.patched: bool = settings["patched"]

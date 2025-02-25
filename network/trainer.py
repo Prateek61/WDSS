@@ -71,6 +71,8 @@ class Trainer:
         # Forward pass
         wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
+        del lr_inp, gb_inp, temporal_inp
+
         # Calculate the loss
         total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
 
@@ -318,6 +320,9 @@ class Trainer:
                 self.best_validation_loss = val_epoch_loss
                 self.save_checkpoint('best.pth')
 
+            # Save the latest checkpoint
+            self.save_checkpoint('latest.pth')
+
             # Save the model checkpoint as per frequency in settings
             if self.total_epochs % self.settings.model_save_interval == 0:
                 self.save_checkpoint(f'{self.total_epochs}.pth')
@@ -329,6 +334,8 @@ class Trainer:
         if self.total_epochs % self.settings.model_save_interval != 0:
             self.save_checkpoint(f'{self.total_epochs}.pth')
             
+    def load_latest_checkpoint(self):
+        self.load_checkpoint('latest.pth')
 
     def test(self):
         test_loader = DataLoader(self.test_dataset, batch_size=1, shuffle=False)
