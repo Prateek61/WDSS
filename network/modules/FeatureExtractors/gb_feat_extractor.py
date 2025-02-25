@@ -20,7 +20,7 @@ class BaseGBFeatExtractor(nn.Module):
             assert False, f"Unknown config: {config}"
 
 class GBFeatureExtractor(nn.Module):
-    def __init__(self, in_channels: int, num_layers: int = 5, layer_size: int = 64 , useDoubleResidualConv = True):
+    def __init__(self, in_channels: int, num_layers: int = 5, layer_size: int = 64 , useDoubleResidualConv = False):
         super(GBFeatureExtractor, self).__init__()
         netlist = []
 
