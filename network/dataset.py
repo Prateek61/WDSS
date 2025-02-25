@@ -298,7 +298,7 @@ class WDSSDatasetCompressed(Dataset):
         """
         preprocessor = Preprocessor.from_config(settings.preprocessor_config)
         train_dataset = WDSSDatasetCompressed(settings.train_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads, preprocessor)
-        val_dataset = WDSSDatasetCompressed(settings.val_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, settings.multi_patches_per_frame, settings.num_threads, preprocessor)
+        val_dataset = WDSSDatasetCompressed(settings.val_dir, settings.frames_per_zip, settings.patch_size if settings.patched else 0, settings.upscale_factor, False, settings.num_threads, preprocessor)
         test_dataset = WDSSDatasetCompressed(settings.test_dir, settings.frames_per_zip, 0, settings.upscale_factor, num_threads = settings.num_threads, preprocessor=preprocessor)
 
         return train_dataset, val_dataset, test_dataset

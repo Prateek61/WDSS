@@ -254,7 +254,7 @@ class Preprocessor:
                 pre_tonemapped = normalizer.denormalize(pre_tonemapped)
             res['Pred'] = self.tonemapper(pre_tonemapped)
             res['Pred_PreTonemapped'] = self.exponential_normalizer.normalize(pre_tonemapped)
-            final = res['Pred_PreTonemapped']
+            final = res['Pred']
         elif self.reconstruction_frame_type in ['Irridiance', 'IrridianceAlbedo', 'IrridianceExtranet']:
             irr = reconstructed
             for normalizer in reversed(self.irridiance_normalizers):
@@ -263,7 +263,7 @@ class Preprocessor:
             pt = BRDFProcessor.brdf_remodulate(irr, inference_buffers['BRDF_HR'].to(device))
             for normalizer in reversed(self.pre_tonemapped_normalizers):
                 pt = normalizer.denormalize(pt)
-            res['Pred_PreTonemapped'] = self.tonemapper(pt)
+            res['Pred_PreTonemapped'] = self.exponential_normalizer.normalize(pt)
             res['Pred'] = self.tonemapper(pt)
             final = res['Pred']
         else:
