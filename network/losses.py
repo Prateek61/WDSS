@@ -231,7 +231,8 @@ class Criterion_Combined(nn.Module):
                 'l1_wave': 0.5,
                 'ssim_wave': 0.05}):
         super(Criterion_Combined, self).__init__()
-        self.lpips = LPIPS(net='vgg').to(device)
+        self.lpips = LPIPS(net='alex').to(device)
+        # self.lpips.eval()  # Commenting out to allow backpropagation
         self.l1 = L1Norm()
         self.ssim = SSIM().to(device)
 
@@ -247,8 +248,9 @@ class Criterion_Combined(nn.Module):
         # First compute all the losses for prediction and target image
         l1_loss = self.l1.forward(prediction_image, target_image)
         ssim_loss = 1 - self.ssim.forward(prediction_image, target_image)
-        lpips_loss = self.lpips.forward(prediction_image, target_image).mean()
 
+        lpips_loss = self.lpips(prediction_image*2 -1, target_image*2 -1).mean()
+            
         # Compute the L1 loss for the wavelet coefficients
         l1_wave = self.l1.forward(prediction_wavelet, target_wavelet)
 
@@ -260,7 +262,7 @@ class Criterion_Combined(nn.Module):
         ssim_wave = (ssim_loss_app + ssim_loss_hor + ssim_loss_ver + ssim_loss_diag) / 4
 
         # Compute the total loss
-        total_loss = self.weights['l1'] * l1_loss + self.weights['ssim'] * ssim_loss+ self.weights['lpips'] * lpips_loss  + self.weights['l1_wave'] * l1_wave + self.weights['ssim_wave'] * ssim_wave
+        total_loss = self.weights['l1'] * l1_loss + self.weights['ssim'] * ssim_loss + self.weights['lpips'] * lpips_loss + self.weights['l1_wave'] * l1_wave + self.weights['ssim_wave'] * ssim_wave
 
         # Add all the losses to the dictionary
         losses['l1_loss'] = l1_loss
@@ -272,5 +274,5 @@ class Criterion_Combined(nn.Module):
         losses['ssim_loss_diag'] = ssim_loss_diag
         losses['total_loss'] = total_loss
 
-        return total_loss, losses
+        return total_loss , losses
 
