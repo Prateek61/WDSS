@@ -112,7 +112,7 @@ class Trainer:
             img_processed = self.validation_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
 
             # Calculate the loss
-            total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
+            total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img_processed, hr_processed)
 
         losses_float: Dict[str, float] = {key: value.item() for key, value in losses.items()}
 
