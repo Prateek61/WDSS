@@ -219,7 +219,7 @@ class Preprocessor:
             irr = frame
             for normalizer in reversed(self.irridiance_normalizers):
                 irr = normalizer.denormalize(irr)
-            pt = BRDFProcessor.brdf_remodulate(irr, inference_buffers['BRDF_HR'].to(frame.device))
+            pt = BRDFProcessor.brdf_remodulate(irr, inference_buffers['BRDF_HR'])
             for normalizer in reversed(self.pre_tonemapped_normalizers):
                 pt = normalizer.denormalize(pt)
             return self.tonemapper(pt)

@@ -62,6 +62,10 @@ class Trainer:
         gb_inp = batch[FrameGroup.GB.value].to(device)
         temporal_inp = batch[FrameGroup.TEMPORAL.value].to(device)
 
+        if FrameGroup.INFERENCE.value in batch:
+            for key in batch[FrameGroup.INFERENCE.value]:
+                batch[FrameGroup.INFERENCE.value][key] = batch[FrameGroup.INFERENCE.value][key].to(device)
+
         hr_gt = batch[FrameGroup.HR.value].to(device)
         hr_wavelet = WaveletProcessor.batch_wt(hr_gt)
 
@@ -73,14 +77,17 @@ class Trainer:
 
         # del lr_inp, gb_inp, temporal_inp
 
-        hr_processed = self.train_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
-        img_processed = self.train_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
+        # hr_processed = self.train_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
+        # img_processed = self.train_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
 
         # Calculate the loss
-        total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img_processed, hr_processed)
+        total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
 
         # Backward pass
         total_loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+
         self.optimizer.step()
 
         losses_float: Dict[str, float] = {key: value.item() for key, value in losses.items()}
@@ -101,6 +108,10 @@ class Trainer:
         gb_inp = batch[FrameGroup.GB.value].to(device)
         temporal_inp = batch[FrameGroup.TEMPORAL.value].to(device)
 
+        if FrameGroup.INFERENCE.value in batch:
+            for key in batch[FrameGroup.INFERENCE.value]:
+                batch[FrameGroup.INFERENCE.value][key] = batch[FrameGroup.INFERENCE.value][key].to(device)
+
         hr_gt = batch[FrameGroup.HR.value].to(device)
         hr_wavelet = WaveletProcessor.batch_wt(hr_gt)
 
@@ -108,11 +119,11 @@ class Trainer:
         with torch.no_grad():
             wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
-            hr_processed = self.validation_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
-            img_processed = self.validation_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
+            # hr_processed = self.validation_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
+            # img_processed = self.validation_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
 
             # Calculate the loss
-            total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img_processed, hr_processed)
+            total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
 
         losses_float: Dict[str, float] = {key: value.item() for key, value in losses.items()}
 
@@ -131,6 +142,10 @@ class Trainer:
             lr_inp = frame[FrameGroup.LR.value].unsqueeze(0).to(device)
             gb_inp = frame[FrameGroup.GB.value].unsqueeze(0).to(device)
             temporal_inp = frame[FrameGroup.TEMPORAL.value].unsqueeze(0).to(device)
+
+            if FrameGroup.INFERENCE.value in frame:
+                for key in frame[FrameGroup.INFERENCE.value]:
+                    frame[FrameGroup.INFERENCE.value][key] = frame[FrameGroup.INFERENCE.value][key].to(device)
 
             self.model.eval()
             with torch.no_grad():

@@ -28,6 +28,8 @@ class BaseTonemapper(nn.Module):
             tonemapper_class = SRGBHable
         elif name == 'SRGB':
             tonemapper_class = SRGBTonemapper
+        elif name == 'Exp':
+            tonemapper_class = Exp
         else:
             raise ValueError(f"Tonemapper {name} not supported.")
         
@@ -90,3 +92,12 @@ class SRGBTonemapper(BaseTonemapper):
         x = x.pow(1.0 / 2.2)
         return x.clamp(0.0, 1.0)
     
+class Exp(BaseTonemapper):
+    def __init__(self, gain: float = 1.0):
+        super(Exp, self).__init__()
+        self.gain = gain
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x * self.gain
+        res = 1.0 - torch.exp(-x)
+        return res.clamp(0.0, 1.0)
