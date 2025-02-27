@@ -67,7 +67,7 @@ class CriterionBase(nn.Module, ABC):
         super(CriterionBase, self).__init__()
 
     @abstractmethod
-    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor, extra : Dict[str, torch.Tensor] = {}) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Forward pass of the criterion
 
         Args:
@@ -94,7 +94,7 @@ class CriterionMSE(CriterionBase):
         self.beta = beta
         self.mse = nn.MSELoss()
 
-    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor, extra : Dict[str, torch.Tensor] = {}) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         # Compute the MSE loss for the predicted image
         mse_image = self.mse.forward(predicted_image, target_image)
         mse_wavelets = self.mse.forward(predicted_wavelets, target_wavelets)
@@ -121,7 +121,7 @@ class CriterionSSIM_MSE(CriterionBase):
         self.ssim = SSIM().to(device)
         self.mse = nn.MSELoss().to(device)
 
-    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor, extra : Dict[str, torch.Tensor] = {}) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         # Compute the SSIM loss for the predicted image
         ssim_image = 1 - self.ssim.forward(predicted_image, target_image)
         ssim_approx = 1 - self.ssim.forward(predicted_wavelets[:, 0:3, :, :], target_wavelets[:, 0:3, :, :])
@@ -171,7 +171,7 @@ class CriterionSSIM_L1(CriterionBase):
         self.ssim = SSIM().to(device)
         self.l1 = L1Norm().to(device)
 
-    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor, extra : Dict[str, torch.Tensor] = {}) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         # Compute the SSIM loss for the predicted image
         ssim_image = 1 - self.ssim.forward(predicted_image, target_image)
         ssim_approx = 1 - self.ssim.forward(predicted_wavelets[:, 0:3, :, :], target_wavelets[:, 0:3, :, :])
@@ -188,7 +188,7 @@ class CriterionSSIM_L1(CriterionBase):
         total_loss = self.weights['ssim_image'] * ssim_image + self.weights['ssim_wavelets'] * ssim_wavelets + self.weights['l1_image'] * l1_image + self.weights['l1_wavelets'] * l1_wavelets
 
         # Return the total loss and the individual losses
-        return total_loss, {'ssim_image': ssim_image, 'ssim_wavelets': ssim_wavelets, 'l1_image': l1_image, 'l1_wavelets': l1_wavelets, 'total_loss': total_loss}
+        return total_loss, {'ssim_image': ssim_image, 'ssim_wavelets': ssim_wavelets, 'l1_image': l1_image, 'l1_wavelets': l1_wavelets}
 
 
 class CriterionSSIM_SmooothL1(CriterionBase):
@@ -204,7 +204,7 @@ class CriterionSSIM_SmooothL1(CriterionBase):
         self.ssim = SSIM().to(device)
         self.smooth_l1 = nn.SmoothL1Loss().to(device)
 
-    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def forward(self, predicted_wavelets: torch.Tensor, target_wavelets: torch.Tensor, predicted_image: torch.Tensor, target_image: torch.Tensor, extra : Dict[str, torch.Tensor] = {}) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         #compute the SSIM loss for the predicted image
         ssim_image = 1 - self.ssim.forward(predicted_image, target_image)
         ssim_approx = 1 - self.ssim.forward(predicted_wavelets[:, 0:3, :, :], target_wavelets[:, 0:3, :, :])
@@ -221,19 +221,21 @@ class CriterionSSIM_SmooothL1(CriterionBase):
         total_loss = self.weights['ssim_image'] * ssim_image + self.weights['ssim_wavelets'] * ssim_wavelets + self.weights['smooth_l1_image'] * smooth_l1_image + self.weights['smooth_l1_wavelets'] * smooth_l1_wavelets
 
         #Return the total loss and the individual losses
-        return total_loss, {'ssim_image': ssim_image, 'ssim_wavelets': ssim_wavelets, 'smooth_l1_image': smooth_l1_image, 'smooth_l1_wavelets': smooth_l1_wavelets, 'total_loss': total_loss}
+        return total_loss, {'ssim_image': ssim_image, 'ssim_wavelets': ssim_wavelets, 'smooth_l1_image': smooth_l1_image, 'smooth_l1_wavelets': smooth_l1_wavelets}
 
 
 class Criterion_Combined(nn.Module):
     def __init__(self, weights: Dict[str, float] = {
-                'l1': 0.5,
-                'ssim': 0.05, 
-                'lpips': 0.05,
-                'l1_wave': 0.5,
-                'ssim_wave': 0.05}):
+    "l1": 0.5,
+    "ssim": 0.15,
+    "l1_wave": 0.35,
+    "ssim_wave": 0.15,
+    "l1_reconstructed": 0.5,
+    "ssim_reconstructed": 0.2,
+    "lpips_reconstructed": 0.2,
+}):
         super(Criterion_Combined, self).__init__()
         self.lpips = LPIPS(net='alex')
-        # self.lpips.eval()  # Commenting out to allow backpropagation
         self.l1 = L1Norm()
         self.ssim = SSIM()
 
@@ -242,7 +244,8 @@ class Criterion_Combined(nn.Module):
     def forward(self, prediction_wavelet: torch.Tensor, 
                 target_wavelet: torch.Tensor, 
                 prediction_image: torch.Tensor, 
-                target_image: torch.Tensor
+                target_image: torch.Tensor,
+                extra : Dict[str, torch.Tensor] = {}
                 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         losses: Dict[str, torch.Tensor] = {}
 
@@ -250,7 +253,6 @@ class Criterion_Combined(nn.Module):
         l1_loss = self.l1.forward(prediction_image, target_image)
         ssim_loss = 1 - self.ssim.forward(prediction_image, target_image)
 
-        lpips_loss = self.lpips(prediction_image*2 -1, target_image*2 -1).mean()
             
         # Compute the L1 loss for the wavelet coefficients
         l1_wave = self.l1.forward(prediction_wavelet, target_wavelet)
@@ -262,17 +264,21 @@ class Criterion_Combined(nn.Module):
         ssim_loss_diag = 1 - self.ssim.forward(prediction_wavelet[:, 9:12, :, :], target_wavelet[:, 9:12, :, :])
         ssim_wave = (ssim_loss_app + ssim_loss_hor + ssim_loss_ver + ssim_loss_diag) / 4
 
+        ssim_reconstructed = 1 - self.ssim.forward(extra['img_processed'], extra['hr_processed'])
+        l1_reconstructed = self.l1.forward(extra['img_processed'], extra['hr_processed'])
+        lpips_reconstructed = self.lpips(extra['img_processed']*2 -1, extra['hr_processed']*2 -1).mean()
+
         # Compute the total loss
-        total_loss = self.weights['l1'] * l1_loss + self.weights['ssim'] * ssim_loss + self.weights['lpips'] * lpips_loss + self.weights['l1_wave'] * l1_wave + self.weights['ssim_wave'] * ssim_wave
+        total_loss = self.weights['l1'] * l1_loss + self.weights['ssim'] * ssim_loss + self.weights['l1_wave'] * l1_wave + self.weights['ssim_wave'] * ssim_wave + self.weights['ssim_reconstructed'] * ssim_reconstructed + self.weights['l1_reconstructed'] * l1_reconstructed + self.weights['lpips_reconstructed'] * lpips_reconstructed
 
         # Add all the losses to the dictionary
-        losses['l1_loss'] = l1_loss
-        losses['ssim_loss'] = ssim_loss
-        losses['lpips_loss'] = lpips_loss
-        losses['ssim_loss_app'] = ssim_loss_app
-        losses['ssim_loss_hor'] = ssim_loss_hor
-        losses['ssim_loss_ver'] = ssim_loss_ver
-        losses['ssim_loss_diag'] = ssim_loss_diag
+        losses['l1_image'] = l1_loss
+        losses['ssim_image'] = ssim_loss
+        losses['lpips_reconstructed'] = lpips_reconstructed
+        losses['l1_reconstructed'] = l1_reconstructed
+        losses['ssim_reconstructed'] = ssim_reconstructed
+        losses['ssim_wavelets'] = ssim_wave
+        losses['l1_wavelets'] = l1_wave
 
         return total_loss , losses
 
