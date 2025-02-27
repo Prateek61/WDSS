@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 class BRDFProcessor:
     @staticmethod
     def compute_brdf(
-        diffuse: torch.Tensor,
+        base_color: torch.Tensor,
         roughness: torch.Tensor,
         metallic: torch.Tensor,
         specular: torch.Tensor,
@@ -20,6 +20,9 @@ class BRDFProcessor:
         # Sample the pre-computed BRDF lookup table
         pre_integration = precomp[0][nov_idx, roughness_idx]
         pre_integration_b = precomp[1][nov_idx, roughness_idx]
+
+        # Compute the diffuse reflactance
+        diffuse = base_color - base_color * metallic
 
         # Compute specular reflactance
         specular = specular.expand(3, -1, -1)
