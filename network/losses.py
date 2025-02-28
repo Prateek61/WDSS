@@ -11,6 +11,12 @@ from config import device
 
 from typing import List, Dict, Tuple
 
+def exp_norm(x: torch.Tensor) -> torch.Tensor:
+    return 1.0 - torch.exp(-x)
+
+def reinhard_norm(x: torch.Tensor) -> torch.Tensor:
+    return x / (1.0 + x)
+
 class ImageEvaluator:
     lipps_model = None
 
@@ -48,7 +54,7 @@ class ImageEvaluator:
 
         # Compute the LPIPS value
         with torch.no_grad():
-            lpips_val: torch.Tensor = ImageEvaluator.lipps_model(input, target)
+            lpips_val: torch.Tensor = ImageEvaluator.lipps_model((input * 2) - 1, (target * 2) - 1)
 
         # Move the LPIPS value back to the input device
         if input_device != device:
@@ -228,8 +234,7 @@ class Criterion_Combined(nn.Module):
     def __init__(self, weights: Dict[str, float] = {
     "l1": 0.5,
     "ssim": 0.15,
-    "l1_wave": 0.35,
-    "ssim_wave": 0.15,
+    "l1_wave": 0.5,
     "l1_reconstructed": 0.5,
     "ssim_reconstructed": 0.2,
     "lpips_reconstructed": 0.2,
@@ -251,25 +256,25 @@ class Criterion_Combined(nn.Module):
 
         # First compute all the losses for prediction and target image
         l1_loss = self.l1.forward(prediction_image, target_image)
-        ssim_loss = 1 - self.ssim.forward(prediction_image, target_image)
-
             
         # Compute the L1 loss for the wavelet coefficients
         l1_wave = self.l1.forward(prediction_wavelet, target_wavelet)
 
-        # Compute the SSIM loss for the wavelet coefficients
-        ssim_loss_app = 1 - self.ssim.forward(prediction_wavelet[:, 0:3, :, :], target_wavelet[:, 0:3, :, :])
-        ssim_loss_hor = 1 - self.ssim.forward(prediction_wavelet[:, 3:6, :, :], target_wavelet[:, 3:6, :, :])
-        ssim_loss_ver = 1 - self.ssim.forward(prediction_wavelet[:, 6:9, :, :], target_wavelet[:, 6:9, :, :])
-        ssim_loss_diag = 1 - self.ssim.forward(prediction_wavelet[:, 9:12, :, :], target_wavelet[:, 9:12, :, :])
-        ssim_wave = (ssim_loss_app + ssim_loss_hor + ssim_loss_ver + ssim_loss_diag) / 4
+        wave_min = torch.min(target_wavelet.min(), prediction_wavelet.min())
+        target_wavelet = target_wavelet - wave_min
+        prediction_wavelet = prediction_wavelet - wave_min
+
+        prediction_image = reinhard_norm(prediction_image)
+        target_image = reinhard_norm(target_image)
+
+        ssim_loss = 1 - self.ssim.forward(prediction_image, target_image)
 
         ssim_reconstructed = 1 - self.ssim.forward(extra['img_processed'], extra['hr_processed'])
         l1_reconstructed = self.l1.forward(extra['img_processed'], extra['hr_processed'])
         lpips_reconstructed = self.lpips(extra['img_processed']*2 -1, extra['hr_processed']*2 -1).mean()
 
         # Compute the total loss
-        total_loss = self.weights['l1'] * l1_loss + self.weights['ssim'] * ssim_loss + self.weights['l1_wave'] * l1_wave + self.weights['ssim_wave'] * ssim_wave + self.weights['ssim_reconstructed'] * ssim_reconstructed + self.weights['l1_reconstructed'] * l1_reconstructed + self.weights['lpips_reconstructed'] * lpips_reconstructed
+        total_loss = self.weights['l1'] * l1_loss + self.weights['ssim'] * ssim_loss + self.weights['l1_wave'] * l1_wave + self.weights['ssim_reconstructed'] * ssim_reconstructed + self.weights['l1_reconstructed'] * l1_reconstructed + self.weights['lpips_reconstructed'] * lpips_reconstructed
 
         # Add all the losses to the dictionary
         losses['l1_image'] = l1_loss
@@ -277,8 +282,16 @@ class Criterion_Combined(nn.Module):
         losses['lpips_reconstructed'] = lpips_reconstructed
         losses['l1_reconstructed'] = l1_reconstructed
         losses['ssim_reconstructed'] = ssim_reconstructed
-        losses['ssim_wavelets'] = ssim_wave
         losses['l1_wavelets'] = l1_wave
+
+        # Print all the losses
+        # print(f"L1 Loss Image: {l1_loss}")
+        # print(f"SSIM Loss Image: {ssim_loss}")
+        # print(f"L1 Loss Wavelet: {l1_wave}")
+        # print(f"L1 Loss Reconstructed: {l1_reconstructed}")
+        # print(f"SSIM Loss Reconstructed: {ssim_reconstructed}")
+        # print(f"LPIPS Loss Reconstructed: {lpips_reconstructed}")
+        # print(f"Total Loss: {total_loss}")
 
         return total_loss , losses
 

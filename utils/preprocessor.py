@@ -252,7 +252,7 @@ class Preprocessor:
     
     def _brdf(self, raw_frames: Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
         return BRDFProcessor.compute_brdf(
-            diffuse=raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR],
+            base_color=raw_frames[RawFrameGroup.HR_GB][GB_Type.BASE_COLOR],
             roughness = raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][1:2, :, :],
             metallic = raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][0:1, :, :],
             specular = raw_frames[RawFrameGroup.HR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][2:3, :, :],
@@ -260,7 +260,7 @@ class Preprocessor:
             precomp = self._precomp,
             max_idx = 511
         ), BRDFProcessor.compute_brdf(
-            diffuse=raw_frames[RawFrameGroup.LR_GB][GB_Type.BASE_COLOR],
+            base_color=raw_frames[RawFrameGroup.LR_GB][GB_Type.BASE_COLOR],
             roughness = raw_frames[RawFrameGroup.LR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][1:2, :, :],
             metallic = raw_frames[RawFrameGroup.LR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][0:1, :, :],
             specular = raw_frames[RawFrameGroup.LR_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][2:3, :, :],
@@ -271,7 +271,7 @@ class Preprocessor:
 
     def _brdf_temporal(self, raw_frames: Dict[RawFrameGroup, Dict[GB_Type, torch.Tensor] | torch.Tensor]) -> torch.Tensor:
         return BRDFProcessor.compute_brdf(
-            diffuse=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.BASE_COLOR],
+            base_color=raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.BASE_COLOR],
             roughness = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][1:2, :, :],
             metallic = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][0:1, :, :],
             specular = raw_frames[RawFrameGroup.TEMPORAL_GB][GB_Type.METALLIC_ROUGHNESS_SPECULAR][2:3, :, :],

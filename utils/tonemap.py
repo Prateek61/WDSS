@@ -54,7 +54,7 @@ class ReinhardTonemapper(BaseTonemapper):
         return res.clamp(0.0, 1.0)
     
 class HableTonemapper(BaseTonemapper):
-    def __init__(self, gain: float = 2.0):
+    def __init__(self, gain: float = 1.0):
         super(HableTonemapper, self).__init__()
         self.gain = gain
 
@@ -77,7 +77,7 @@ class HableTonemapper(BaseTonemapper):
         return res.clamp(0.0, 1.0)
     
 class SRGBHable(BaseTonemapper):
-    def __init__(self, gain: float = 2.0):
+    def __init__(self, gain: float = 1.0):
         super(SRGBHable, self).__init__()
         self.habel = HableTonemapper(gain)
         self.gamma = 2.2
@@ -88,7 +88,7 @@ class SRGBHable(BaseTonemapper):
         return x.clamp(0.0, 1.0)
     
 class SRGBTonemapper(BaseTonemapper):
-    def __init__(self, gain: float = 2.0):
+    def __init__(self, gain: float = 1.0):
         super(SRGBTonemapper, self).__init__()
         self.gain = gain
 

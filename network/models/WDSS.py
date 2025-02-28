@@ -90,7 +90,7 @@ class WDSS(ModelBase):
 
         wavelet_out = self.final_conv(wavelet_out)
 
-        image = WaveletProcessor.batch_iwt(wavelet_out)
+        image = WaveletProcessor.batch_iwt(wavelet_out).clamp(min=0.0, max=None)
 
         return wavelet_out, image
     

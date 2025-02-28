@@ -80,15 +80,13 @@ class Trainer:
         hr_processed = self.train_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
         img_processed = self.train_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
 
-
-
         # Calculate the loss
         total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt, extra={'hr_processed': hr_processed, 'img_processed': img_processed})
 
         # Backward pass
         total_loss.backward()
 
-        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 3.0)
 
         self.optimizer.step()
 
