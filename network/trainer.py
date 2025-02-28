@@ -86,7 +86,7 @@ class Trainer:
         # Backward pass
         total_loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 3.0)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.0)
 
         self.optimizer.step()
 
