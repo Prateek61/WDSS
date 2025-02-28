@@ -232,13 +232,13 @@ class CriterionSSIM_SmooothL1(CriterionBase):
 
 class Criterion_Combined(nn.Module):
     def __init__(self, weights: Dict[str, float] = {
-    "l1": 0.5,
-    "ssim": 0.15,
-    "l1_wave": 0.5,
-    "l1_reconstructed": 0.5,
-    "ssim_reconstructed": 0.2,
-    "lpips_reconstructed": 0.2,
-}):
+        "l1": 0.1,
+        "ssim": 0.25,
+        "l1_wave": 0.1,
+        "ssim_reconstructed": 0.4,
+        "l1_reconstructed": 1.0,
+        "lpips_reconstructed": 0.15
+    }):
         super(Criterion_Combined, self).__init__()
         self.lpips = LPIPS(net='alex')
         self.l1 = L1Norm()
