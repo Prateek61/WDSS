@@ -30,6 +30,11 @@ class BaseTonemapper(nn.Module):
             tonemapper_class = SRGBTonemapper
         elif name == 'Exp':
             tonemapper_class = Exp
+        elif name == 'Log':
+            tonemapper_class = Log
+        elif name == 'Default':
+            tonemapper_class = DefaultTonemapper
+        
         else:
             raise ValueError(f"Tonemapper {name} not supported.")
         
@@ -101,3 +106,23 @@ class Exp(BaseTonemapper):
         x = x * self.gain
         res = 1.0 - torch.exp(-x)
         return res.clamp(0.0, 1.0)
+
+
+class Log(BaseTonemapper):
+    def __init__(self, gain: float = 1.0):
+        super(Log, self).__init__()
+        self.gain = gain
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x * self.gain
+        res = torch.log(1.0 + x)
+        return res.clamp(0.0, 1.0)
+    
+class DefaultTonemapper(BaseTonemapper):
+    def __init__(self, gain:float = 1.0):
+        super(DefaultTonemapper, self).__init__()
+        self.gain = gain
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x * self.gain
+        return x.clamp(0.0, 1.0)

@@ -121,11 +121,11 @@ class Trainer:
         with torch.no_grad():
             wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, 2.0)
 
-            # hr_processed = self.validation_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
-            # img_processed = self.validation_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
+            hr_processed = self.validation_dataset.preprocessor.postprocess_train(hr_gt, batch[FrameGroup.INFERENCE.value])
+            img_processed = self.validation_dataset.preprocessor.postprocess_train(img, batch[FrameGroup.INFERENCE.value])
 
             # Calculate the loss
-            total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt)
+            total_loss, losses = self.criterion.forward(wavelet, hr_wavelet, img, hr_gt, extra={'hr_processed': hr_processed, 'img_processed': img_processed})
 
         losses_float: Dict[str, float] = {key: value.item() for key, value in losses.items()}
 
