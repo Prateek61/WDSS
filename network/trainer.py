@@ -514,9 +514,9 @@ class Trainer:
     def get_loss_data(self, loss_folder: str) -> Tuple[float, Dict[str, float], float, Dict[str, float]]:
         """Get the loss data from the file.
         """
+        
+        loss_path = os.path.join(loss_folder)
 
-        loss_file = os.listdir(os.path.join(self.settings.log_path(), loss_folder))[0]
-        loss_path = os.path.join(self.settings.log_path(), loss_folder, loss_file)
         
         return self.logger.get_all_scalars(loss_path)
     
@@ -531,14 +531,32 @@ class Trainer:
         path = os.path.join(self.settings.log_path(), image_path[0])
         
         return self.logger.get_image_tags(path)
+    
+    def remove_loss_anamolies(self, loss: str, threshold: float):
+        """Change anamolies with average.
+        """
+        valid_values = [i[1] for i in loss if i[1] <= threshold]
+        count = len(valid_values)
+
+        # Calculate average
+        avg = sum(valid_values) / count if count > 0 else 0
+
+        # Overwrite values > 1 with the average
+        loss = [(i[0], i[1] if i[1] <= threshold else avg) for i in loss]
+        return loss
         
 
     def visualize_losses(self, loss: str, config: Dict[str, Any] = {}):
         """Visualize the loss data with configurable colors, linestyles, clipping, and axis ranges."""
         
+        loss_threshold = config.get('loss_threshold', 1.0)
+        
         # Fetch loss data
         train_losses = self.logger.get_all_scalars(loss + '_train')
+        train_losses[loss] = self.remove_loss_anamolies(train_losses[loss], loss_threshold)
         val_losses = self.logger.get_all_scalars(loss + '_val')
+        val_losses[loss] = self.remove_loss_anamolies(val_losses[loss], loss_threshold)
+        
 
         # Ensure the loss key exists in the dictionaries
         if loss not in train_losses or loss not in val_losses:
@@ -560,8 +578,8 @@ class Trainer:
             val_values = np.clip(val_values, 0, clip_threshold)
 
         # Get color and linestyle configurations (fallback to defaults)
-        train_color = config.get('train_color', 'blue')
-        val_color = config.get('val_color', 'red')
+        train_color = config.get('train_color', 'black')
+        val_color = config.get('val_color', 'black')
         train_linestyle = config.get('train_linestyle', '-')
         val_linestyle = config.get('val_linestyle', '--')
 
