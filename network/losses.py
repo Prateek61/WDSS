@@ -232,11 +232,11 @@ class CriterionSSIM_SmooothL1(CriterionBase):
 
 class Criterion_Combined(nn.Module):
     def __init__(self, weights: Dict[str, float] = {
-        "l1": 0.1,
-        "ssim": 0.25,
-        "l1_wave": 0.1,
-        "ssim_reconstructed": 0.4,
-        "l1_reconstructed": 1.0,
+        "l1": 0.25,
+        "ssim": 0.2,
+        "l1_wave": 0.25,
+        "ssim_reconstructed": 0.2,
+        "l1_reconstructed": 0.6,
         "lpips_reconstructed": 0.15
     }):
         super(Criterion_Combined, self).__init__()
@@ -264,8 +264,8 @@ class Criterion_Combined(nn.Module):
         target_wavelet = target_wavelet - wave_min
         prediction_wavelet = prediction_wavelet - wave_min
 
-        prediction_image = reinhard_norm(prediction_image)
-        target_image = reinhard_norm(target_image)
+        # prediction_image = reinhard_norm(prediction_image)
+        # target_image = reinhard_norm(target_image)
 
         ssim_loss = 1 - self.ssim.forward(prediction_image, target_image)
 
@@ -284,14 +284,16 @@ class Criterion_Combined(nn.Module):
         losses['ssim_reconstructed'] = ssim_reconstructed
         losses['l1_wavelets'] = l1_wave
 
-        # Print all the losses
-        # print(f"L1 Loss Image: {l1_loss}")
-        # print(f"SSIM Loss Image: {ssim_loss}")
-        # print(f"L1 Loss Wavelet: {l1_wave}")
-        # print(f"L1 Loss Reconstructed: {l1_reconstructed}")
-        # print(f"SSIM Loss Reconstructed: {ssim_reconstructed}")
-        # print(f"LPIPS Loss Reconstructed: {lpips_reconstructed}")
-        # print(f"Total Loss: {total_loss}")
+        if total_loss == float('nan'):
+            # Print all the losses
+            print(f"L1 Loss Image: {l1_loss}")
+            print(f"SSIM Loss Image: {ssim_loss}")
+            print(f"L1 Loss Wavelet: {l1_wave}")
+            print(f"L1 Loss Reconstructed: {l1_reconstructed}")
+            print(f"SSIM Loss Reconstructed: {ssim_reconstructed}")
+            print(f"LPIPS Loss Reconstructed: {lpips_reconstructed}")
+            print(f"Total Loss: {total_loss}")
+            total_loss = torch.tensor(0.0)
 
         return total_loss , losses
 

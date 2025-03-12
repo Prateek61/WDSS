@@ -168,8 +168,8 @@ class Preprocessor:
 
             res['PreTonemappedHR'] = pt_hr
             res['PreTonemappedLR'] = pt_lr
-            res['HR'] = self.tonemapper(pt_hr)
-            res['LR'] = self.tonemapper(pt_lr)
+            res['HR'] = self.tonemapper(raw_frames[RawFrameGroup.HR_GB][GB_Type.PRE_TONEMAPPED])
+            res['LR'] = self.tonemapper(raw_frames[RawFrameGroup.LR_GB][GB_Type.PRE_TONEMAPPED])
             res['HRWavelet'] = WaveletProcessor.wavelet_transform_image(to_wt_hr)
             res['LRWavelet'] = WaveletProcessor.wavelet_transform_image(to_wt_lr)
         else:

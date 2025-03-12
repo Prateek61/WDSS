@@ -282,6 +282,40 @@ class ImageUtils:
         return image.permute(0, 3, 1, 2).clamp(min=0.0, max=1.0)
     
     @staticmethod
+    def save_tensor(image: torch.Tensor, path: str) -> None:
+        """Save a tensor as an image file.
+        """
+
+        image_cv = ImageUtils.tensor_to_opencv_image(image)
+        image_cv = (image_cv * 255).astype(np.uint8)
+        image_cv = cv2.cvtColor(image_cv, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(path, image_cv)
+
+    @staticmethod
+    def stack_wavelet(wavelet: torch.Tensor) -> torch.Tensor:
+        """Stack the wavelets for display.
+        """
+
+        _, h, w = wavelet.shape
+
+        # Get the coefficients
+        cA = wavelet[0:3, :, :]
+        cH = wavelet[3:6, :, :]
+        cV = wavelet[6:9, :, :]
+        cD = wavelet[9:12, :, :]
+
+        # Stack the wavelets
+        # Final image will be of shape (3, 2H, 2W)
+        wavelet_img = torch.zeros(3, 2*h, 2*w)
+
+        wavelet_img[:, :h, :w] = cA
+        wavelet_img[:, :h, w:] = cV
+        wavelet_img[:, h:, :w] = cD
+        wavelet_img[:, h:, w:] = cH
+
+        return wavelet_img
+
+    @staticmethod
     def aces_tonemap_fast(image: torch.Tensor, gain: float = 1.0) -> torch.Tensor:
         A = 2.51
         B = 0.03
