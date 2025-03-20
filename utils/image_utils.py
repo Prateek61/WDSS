@@ -122,8 +122,8 @@ class ImageUtils:
         """
 
         # Load the image using OpenCV
-        image = cv2.imread(image_path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH)
+        image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
         return image
     
     @staticmethod
