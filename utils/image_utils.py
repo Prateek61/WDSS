@@ -143,8 +143,8 @@ class ImageUtils:
     @staticmethod
     def decode_exr_image_opencv(file_buffer: bytes) -> np.ndarray:
         # Decode the EXR image using OpenCV
-        image = cv2.imdecode(np.frombuffer(file_buffer, np.uint8), cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.imdecode(np.frombuffer(file_buffer, np.uint8), cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH)
+        image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
         return image
 
     @staticmethod

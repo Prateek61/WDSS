@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from network.dataset import RawFrameGroup, GB_Type, FrameGroup
+from network.commons import RawFrameGroup, FrameGroup, GB_TYPE as GB_Type
 from .tonemap import BaseTonemapper
 from utils.masks import Mask
 from .image_utils import ImageUtils

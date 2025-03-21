@@ -1,45 +1,46 @@
-import torch
-import torch.nn.functional as F
+
 from enum import Enum
 
-# Enum to represent activation functions
-class ActivationFn(Enum):
-    GELU = torch.nn.GELU()
-    RELU = torch.nn.ReLU(inplace=True)
-    SOFTMAX = torch.nn.Softmax(dim=1)
-    SOFTMAX2D = torch.nn.Softmax2d()
-    SIGMOID = torch.nn.Sigmoid()
-    TANH = torch.nn.Tanh()
-    LRELU = torch.nn.LeakyReLU(0.2)
+RECURSION_DEPTH = 3
 
-def pad_tensor(t: torch.Tensor, pattern: torch.Tensor) -> torch.Tensor:
-    """Returns a padded tensor with the given pattern.
+@staticmethod
+def wrap_try(func: callable):
+    def wrapper(*args, **kwargs):
 
-    Args:
-        t (torch.Tensor): Input tensor.
-        pattern (torch.Tensor): Pattern tensor.
+        recursion_depth = kwargs.pop('recursion_depth', RECURSION_DEPTH)
 
-    Returns:
-        torch.Tensor: Padded tensor.
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            print(f'Error in {func.__name__}: {e}, depth: {recursion_depth}')
+
+            if recursion_depth <= 0:
+                raise e
+            
+            # Retry with decremented recursion depth
+            recursion_depth -= 1
+            kwargs['recursion_depth'] = recursion_depth
+
+            return wrapper(*args, **kwargs)
+        
+class GB_TYPE(Enum):
+    """G-Buffer types for the dataset
     """
-    
-    pattern = pattern.view(1, -1, 1, 1)
-    t = F.pad(t, (1, 1, 1, 1), 'constant', 0)
-    t[:, :, 0:1, :] = pattern
-    t[:, :, -1:, :] = pattern
-    t[:, :, :, 0:1] = pattern
-    t[:, :, :, -1:] = pattern
+    BASE_COLOR_DEPTH = 'BaseColorDepth'
+    MV_ROUGHNESS_NOV = 'MV_Roughness_NOV'
+    NORMAL_SPECULAR = 'NormalSpecular'
+    PRETONEMAP_METALLIC = 'PretonemapMetallic'
 
-    return t
+class RawFrameGroup(Enum):
+    HR_GB = 'HighResGBuffer'
+    LR_GB = 'LowResGBuffer'
+    TEMPORAL_GB = 'TemporalGBuffer'
 
-def get_activation_fn(activation_fn: ActivationFn) -> torch.nn.Module:
-    """Returns the activation function assotiated with the given enum.
-
-    Args:
-        activation_fn (ActivationFn): Activation function enum.
-
-    Returns:
-        torch.nn.Module: Activation function.
+class FrameGroup(Enum):
+    """Pre processed Frame Groups for the model
     """
-    
-    return activation_fn.value
+    GT = 'GT'
+    LR_INP = 'LR_INP'
+    GB_INP = 'GB_INP'
+    TEMPORAL_INP = 'TEMPORAL_INP'
+    EXTRA = 'EXTRA'

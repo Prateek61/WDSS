@@ -24,3 +24,7 @@ system.log
 jupyter_notebooks/test.ipynb
 testin.py
 !config/config-example.json
+
+# Old files
+**.old**
+jupyter_notebooks

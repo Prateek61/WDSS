@@ -35,7 +35,7 @@ class Settings:
         self._settings = settings
 
     def get_full_path(self, folder: str) -> str:
-        return os.path.join(self.out_dir, f'{self.job_name}-{self.model_name}', folder)
+        return os.path.join(self.out_dir, f'{self.job_name}', folder)
     
     def model_path(self) -> str:
         return self.get_full_path(self.model_dir)
