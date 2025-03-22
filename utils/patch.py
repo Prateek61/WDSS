@@ -53,15 +53,15 @@ class Patch:
         return self._patch_window_from_hr_patch((top_left_h, top_left_w), upscale_factor)
 
     def _patch_window_from_hr_patch(self, patch: Tuple[int, int], upscale_factor: float) -> PatchWindow:
-        hr_patch_h, hr_patch_w = patch
+        hr_patch_h, hr_patch_w = self.high_resolution_patch_size, self.high_resolution_patch_size
         lr_patch_h, lr_patch_w = int(hr_patch_h / upscale_factor), int(hr_patch_w / upscale_factor)
         hr_h, hr_w = self.high_resolution
 
         hr_patch_y_tl, hr_patch_x_tl = patch
 
         # Clamp the patch to fit within the image
-        hr_patch_y_tl = int(np.clip(hr_patch_y_tl, 0, hr_h - hr_patch_h))
-        hr_patch_x_tl = int(np.clip(hr_patch_x_tl, 0, hr_w - hr_patch_w))
+        hr_patch_y_tl = int(min(max(0, hr_patch_y_tl), hr_h - hr_patch_h))
+        hr_patch_x_tl = int(min(max(0, hr_patch_x_tl), hr_w - hr_patch_w))
 
         # Calculate the bottom right corner of the patch
         hr_patch_y_br = int(hr_patch_y_tl + hr_patch_h)

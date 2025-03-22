@@ -33,8 +33,8 @@ class WDSSDataset(Dataset):
         frames_per_zip: int,
         hr_patch_size: int, # 0 for no patching
         multi_patches_per_frame: bool,
-        resolutions: Dict[int, Tuple[str, Tuple[int, int]]], # Dict mapping scale factor to (folder_name, (width, height))
-        num_threads: int, # 0 for no threading
+        resolutions: Dict[int, Tuple[str, Tuple[int, int]]], # Dict mapping scale factor to (folder_name, (height, width))
+        multiprocessing: bool,
         preprocessor: Preprocessor
     ):
         self.root_dir = root_dir
@@ -42,7 +42,7 @@ class WDSSDataset(Dataset):
         self.hr_patch_size = hr_patch_size
         self.multi_patches_per_frame = multi_patches_per_frame
         self.resolutions = resolutions
-        self.num_threads = num_threads
+        self.multiprocessing = multiprocessing
         self.preprocessor = preprocessor
 
         self._initialize()
@@ -56,14 +56,21 @@ class WDSSDataset(Dataset):
         )   
         self.patches_per_frame = self.patch.patches_per_frame
         self.total_frames = len(self.compressed_files) * self.frames_per_zip
-        self._threaded = self.num_threads > 0
-        if self._threaded:
-            self._thread_pool = ThreadPool(processes=self.num_threads)
+        if self.multiprocessing:
+            self._thread_pool = ThreadPool(12)
 
     def __len__(self) -> int:
         return self.total_frames
 
-    def _raw_frames_threaded(self, idx: int, upscale_factor: float = 2.0, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]]:
+    def get_raw_frames(self, idx: int, upscale_factor: float = 2.0, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]]:
+        """Get raw frames from the dataset
+        """
+        if self.multiprocessing:
+            return self._raw_frames_parallel(idx, upscale_factor, no_patch)
+        else:
+            return self._raw_frames_no_parallel(idx, upscale_factor, no_patch)
+
+    def _raw_frames_no_parallel(self, idx: int, upscale_factor: float = 2.0, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]]:
         """Get raw frames from the dataset
         """
         res: Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]] = {
@@ -72,13 +79,56 @@ class WDSSDataset(Dataset):
             RawFrameGroup.TEMPORAL_GB: {gb_type: None for gb_type in GB_TYPE}
         }
 
-        patch_idx = 1
         if not no_patch:
             patch_idx = idx % self.patches_per_frame
             frame_no = idx // self.patches_per_frame
+        else:
+            frame_no = idx
+            patch_idx = 1
+
         zip_file_idx = frame_no // self.frames_per_zip
         frame_no = frame_no % self.frames_per_zip
-        frame_no += 2 # Ignore the first two frames
+        frame_no += 3 # Ignore the first three frames
+
+        if self.hr_patch_size and not no_patch:
+            lr_window, hr_window = self.patch.get_patch_window(upscale_factor, patch_idx)
+        else:
+            lr_window, hr_window = None, None
+
+        # Open the zip file
+        with ZipFile(os.path.join(self.root_dir, self.compressed_files[zip_file_idx]), 'r') as zip_ref:
+            base_folder = self._get_base_folder_name(zip_ref)
+
+            for gb_type in GB_TYPE:
+                res[RawFrameGroup.HR_GB][gb_type] = self._process_frame(zip_ref, self._get_path(base_folder, frame_no, gb_type, 1), hr_window)
+                res[RawFrameGroup.LR_GB][gb_type] = self._process_frame(zip_ref, self._get_path(base_folder, frame_no, gb_type, upscale_factor), lr_window)
+                res[RawFrameGroup.TEMPORAL_GB][gb_type] = self._process_frame(zip_ref, self._get_path(base_folder, frame_no - 1, gb_type, 1), hr_window)
+
+        return res 
+
+    def _raw_frames_parallel(self, idx: int, upscale_factor: float = 2.0, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]]:
+        """Get raw frames from the dataset
+        """
+        res: Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]] = {
+            RawFrameGroup.HR_GB: {gb_type: None for gb_type in GB_TYPE},
+            RawFrameGroup.LR_GB: {gb_type: None for gb_type in GB_TYPE},
+            RawFrameGroup.TEMPORAL_GB: {gb_type: None for gb_type in GB_TYPE}
+        }
+
+        if not no_patch:
+            patch_idx = idx % self.patches_per_frame
+            frame_no = idx // self.patches_per_frame
+        else:
+            frame_no = idx
+            patch_idx = 1
+        zip_file_idx = frame_no // self.frames_per_zip
+        frame_no = frame_no % self.frames_per_zip
+        frame_no += 3 # Ignore the first three frames
+
+        if self.hr_patch_size and not no_patch:
+            lr_window, hr_window = self.patch.get_patch_window(upscale_factor, patch_idx)
+        else:
+            lr_window, hr_window = None, None
 
         # Open the zip file
         with ZipFile(os.path.join(self.root_dir, self.compressed_files[zip_file_idx]), 'r') as zip_ref:
@@ -91,16 +141,16 @@ class WDSSDataset(Dataset):
 
             for gb_type in GB_TYPE:
                 hr_async_res[gb_type] = self._thread_pool.apply_async(
-                    ZipUtils.get_frame,
-                    (zip_ref, self._get_path(base_folder, frame_no, gb_type, 1))
+                    WDSSDataset._process_frame,
+                    (zip_ref, self._get_path(base_folder, frame_no, gb_type, 1), hr_window)
                 )
                 lr_async_res[gb_type] = self._thread_pool.apply_async(
-                    ZipUtils.get_frame,
-                    (zip_ref, self._get_path(base_folder, frame_no, gb_type, upscale_factor))
+                    WDSSDataset._process_frame,
+                    (zip_ref, self._get_path(base_folder, frame_no, gb_type, upscale_factor), lr_window)
                 )
                 temporal_async_res[gb_type] = self._thread_pool.apply_async(
-                    ZipUtils.get_frame,
-                    (zip_ref, self._get_path(base_folder, frame_no, gb_type, 1))
+                    WDSSDataset._process_frame,
+                    (zip_ref, self._get_path(base_folder, frame_no - 1, gb_type, 1), hr_window)
                 )
 
             # Wait for the async results
@@ -109,21 +159,21 @@ class WDSSDataset(Dataset):
                 res[RawFrameGroup.LR_GB][gb_type] = lr_async_res[gb_type].get()
                 res[RawFrameGroup.TEMPORAL_GB][gb_type] = temporal_async_res[gb_type].get()
 
-        # Apply patch if needed
-        if self.hr_patch_size and not no_patch:
-            lr_window, hr_window = self.patch.get_patch_window(upscale_factor, patch_idx)
-            res[RawFrameGroup.HR_GB] = self._apply_patch(res[RawFrameGroup.HR_GB], hr_window)
-            res[RawFrameGroup.LR_GB] = self._apply_patch(res[RawFrameGroup.LR_GB], lr_window)
-            res[RawFrameGroup.TEMPORAL_GB] = self._apply_patch(res[RawFrameGroup.TEMPORAL_GB], hr_window)
-
         return res
 
-    def _apply_patch(self, frames: Dict[GB_TYPE, torch.Tensor], patch: Tuple[Tuple[int, int], Tuple[int, int]]) -> Dict[GB_TYPE, torch.Tensor]:
+    @staticmethod
+    def _process_frame(zip_ref: ZipFile, file_path: str, patch_window: Tuple[Tuple[int, int], Tuple[int, int]]) -> torch.Tensor:
+        frame = ZipUtils.get_frame(zip_ref, file_path)
+        if patch_window:
+            frame = WDSSDataset._apply_patch(frame, patch_window)
+        return frame
+
+    @staticmethod
+    def _apply_patch(frame: torch.Tensor, patch: Tuple[Tuple[int, int], Tuple[int, int]]) -> Dict[GB_TYPE, torch.Tensor]:
         """Apply patch to the frames
         """
-        for gb_type in frames.keys():
-            frames[gb_type] = frames[gb_type][:, patch[0][0]:patch[1][0], patch[0][1]:patch[1][1]]
-        return frames
+        frame = frame[:, patch[0][0]:patch[1][0], patch[0][1]:patch[1][1]]
+        return frame
 
     def _get_base_folder_name(self, zip_file: ZipFile) -> str:
         """Get the base folder name from the zip file
