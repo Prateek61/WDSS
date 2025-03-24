@@ -22,6 +22,7 @@ def wrap_try(func: callable):
             kwargs['recursion_depth'] = recursion_depth
 
             return wrapper(*args, **kwargs)
+    return wrapper
         
 class GB_TYPE(Enum):
     """G-Buffer types for the dataset

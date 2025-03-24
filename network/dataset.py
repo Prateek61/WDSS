@@ -61,6 +61,18 @@ class WDSSDataset(Dataset):
 
     def __len__(self) -> int:
         return self.total_frames
+    
+    @wrap_try
+    def __getitem__(self, index) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
+        raw_frames = self.get_raw_frames(index)
+        return self.preprocessor.preprocess(raw_frames, 2.0)
+    
+    @wrap_try
+    def get_item(self, index, upscale_factor: float, no_patch: bool = False) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
+        """Get item from the dataset
+        """
+        raw_frames = self.get_raw_frames(index, upscale_factor, no_patch)
+        return self.preprocessor.preprocess(raw_frames, upscale_factor)
 
     def get_raw_frames(self, idx: int, upscale_factor: float = 2.0, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]]:
         """Get raw frames from the dataset
@@ -186,3 +198,51 @@ class WDSSDataset(Dataset):
         file_name = gb_type.value + ext
         return folder + file_name
     
+    @staticmethod
+    def get_datasets(
+        settings: Settings
+    ) -> Tuple['WDSSDataset', 'WDSSDataset', 'WDSSDataset']:
+        """Get the datasets for training, validation and testing
+        """
+
+        preprocessor = Preprocessor.from_config(settings.preprocessor_config)
+        train_dir = settings.get_full_path(settings.dataset_config['train_dir'])
+        val_dir = settings.get_full_path(settings.dataset_config['val_dir'])
+        test_dir = settings.get_full_path(settings.dataset_config['test_dir'])
+        frames_per_zip = settings.dataset_config['frames_per_zip']
+        hr_patch_size = settings.dataset_config['patch_size']
+        multi_patches_per_frame = settings.dataset_config['multi_patches_per_frame']
+        multiprocessing = settings.dataset_config['multiprocessing']
+        resolutions = {}
+        for key, value in settings.dataset_config['resolutions'].items():
+            resolutions[int(key)] = (value["folder"], (value["height"], value["width"]))
+        
+        train_dataset = WDSSDataset(
+            root_dir=train_dir,
+            frames_per_zip=frames_per_zip,
+            hr_patch_size=hr_patch_size,
+            multi_patches_per_frame=multi_patches_per_frame,
+            resolutions=resolutions,
+            multiprocessing=multiprocessing,
+            preprocessor=preprocessor
+        )
+        val_dataset = WDSSDataset(
+            root_dir=val_dir,
+            frames_per_zip=frames_per_zip,
+            hr_patch_size=hr_patch_size,
+            multi_patches_per_frame=multi_patches_per_frame,
+            resolutions=resolutions,
+            multiprocessing=multiprocessing,
+            preprocessor=preprocessor
+        )
+        test_dataset = WDSSDataset(
+            root_dir=test_dir,
+            frames_per_zip=frames_per_zip,
+            hr_patch_size=hr_patch_size,
+            multi_patches_per_frame=multi_patches_per_frame,
+            resolutions=resolutions,
+            multiprocessing=multiprocessing,
+            preprocessor=preprocessor
+        )
+
+        return train_dataset, val_dataset, test_dataset

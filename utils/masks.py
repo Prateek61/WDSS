@@ -78,7 +78,7 @@ class Mask:
         albedo_mask = Mask._albedo_mask(hr_base_color, upsampled_lr_base_color, threasholds['albedo'])
 
         # Combine the masks
-        spatial_mask = depth_mask * normal_mask * albedo_mask
+        spatial_mask = depth_mask + normal_mask + albedo_mask
 
         # Clamp the mask to 1
         spatial_mask = torch.clamp(spatial_mask, min=0, max=1)

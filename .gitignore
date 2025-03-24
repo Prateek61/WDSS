@@ -27,4 +27,5 @@ testin.py
 
 # Old files
 **.old**
-jupyter_notebooks
+**test.ipynb
+**.ipynb
