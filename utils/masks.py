@@ -135,10 +135,13 @@ class Mask:
     ) -> torch.Tensor:
         """Warp the frame using the motion vector.
         """
+        # Scale motion vector, is ideally not needed but there is issue with our dataset
+        # We had to increase the render resolution by 25% to acquire the correct resolution G-buffers
+        # But this caused the motion vector to be 25% larger than the original frame
+        motion_vector = motion_vector * 0.75
+
         n, c, h, w = frame.shape
         device = frame.device
-
-        motion_vector *= -1.0
 
         # Create normalized coordinate grid
         dx = torch.linspace(-1.0, 1.0, w, device=device)
@@ -147,12 +150,12 @@ class Mask:
         grid_y, grid_x = meshgrid
 
         # Add motion vectors to the grid
-        grid_x = grid_x.unsqueeze(0).expand(n, -1, -1) + (2 * motion_vector[:, 0] / w)
+        grid_x = grid_x.unsqueeze(0).expand(n, -1, -1) - (2 * motion_vector[:, 0] / w)
         grid_y = grid_y.unsqueeze(0).expand(n, -1, -1) + (2 * motion_vector[:, 1] / h)
         warped_grid = torch.stack((grid_x, grid_y), dim=-1) # (N, H, W, 2)
 
         # Warp the image using grid_sample
-        warped_frame = torch.nn.functional.grid_sample(frame, warped_grid, mode='bilinear', padding_mode='zeros', align_corners=True)
+        warped_frame = torch.nn.functional.grid_sample(frame, warped_grid, padding_mode='zeros', align_corners=True)
         return warped_frame
     
     @staticmethod
