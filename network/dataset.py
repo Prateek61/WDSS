@@ -246,3 +246,34 @@ class WDSSDataset(Dataset):
         )
 
         return train_dataset, val_dataset, test_dataset
+    
+class WDSSDataLoader(DataLoader):
+    """Override the default DataLoader as we need to pass upscale factor to the dataset
+    """
+    def __init__(
+        self,
+        dataset: WDSSDataset,
+        upscale_factors: List[Tuple[int, float]], # Upscale factors with their probabilities
+        *args,
+        **kwargs
+    ):
+        super().__init__(dataset, *args, **kwargs)
+        self.upscale_factors = upscale_factors
+
+    def __iter__(self):
+        # Select a random upscale factor for each batch
+        upscale_factor = self._select_random_upscale_factor()
+        self.dataset.__getitem__ = lambda idx: self.dataset.get_item(idx, upscale_factor, no_patch=False)
+        return super().__iter__()
+    
+    def _select_random_upscale_factor(self) -> float:
+        """Select a random upscale factor based on the probabilities
+        """
+        total = sum(prob for _, prob in self.upscale_factors)
+        rand_val = randint(0, total - 1)
+        cumulative_prob = 0
+        for factor, prob in self.upscale_factors:
+            cumulative_prob += prob
+            if rand_val < cumulative_prob:
+                return factor
+        return self.upscale_factors[-1][0]

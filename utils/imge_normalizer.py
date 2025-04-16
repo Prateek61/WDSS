@@ -29,6 +29,8 @@ class BaseImageNormalizer(ABC):
             return LinearToSRGB()
         elif config['type'] == 'auto_exposure':
             return AutoExposureNormalizer(config['percentile'])
+        elif config['type'] == 'reinhard':
+            return ReinhardNormalizer()
         else:
             raise ValueError(f"Unknown normalizer type: {config['type']}")
     
@@ -117,3 +119,16 @@ class AutoExposureNormalizer(BaseImageNormalizer):
     def denormalize(self, x: torch.Tensor):
         return x     
     
+class ReinhardNormalizer(BaseImageNormalizer):
+    def __init__(self):
+        super().__init__()
+
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        return x / (x + 1.0)
+
+    def denormalize(self, x: torch.Tensor) -> torch.Tensor:
+        return x / (1.0 - x)
+    
+    @staticmethod
+    def from_config(config: Dict[str, Any]):
+        return ReinhardNormalizer()

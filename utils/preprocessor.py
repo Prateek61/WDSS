@@ -29,6 +29,7 @@ class Preprocessor:
         self.spatial_mask_threasholds = spatial_mask_threasholds
         self.tonemapper = BaseTonemapper.from_name(tonemapper)
         self.exponential_normalizer = BaseImageNormalizer.from_config({'type': 'exponential'}) # For visualization
+        self.reinhard_normalizer = BaseImageNormalizer.from_config({'type': 'reinhard'}) # For visualization
 
     def preprocess(
         self,
@@ -55,7 +56,7 @@ class Preprocessor:
         return res
     
     def postprocess(
-            self,
+        self,
         frame: torch.Tensor,
         extra: Dict[str, torch.Tensor]
     ) -> torch.Tensor:
@@ -63,6 +64,27 @@ class Preprocessor:
             frame = BRDFProcessor.brdf_remodulate(frame, extra['BRDF'])
 
         return frame
+    
+    # For logging to tensorboard
+    def get_log(self,
+        raw_frames: Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]],
+        upscale_factor: float
+    ) -> Dict[str, torch.Tensor]:
+        res: Dict[str, torch.Tensor] = {}
+
+        preprocessed_frame = self.preprocess(raw_frames, upscale_factor)
+        res['HR'] = self.exponential_normalizer.normalize(preprocessed_frame[FrameGroup.GT.value])
+        res['LR'] = self.exponential_normalizer.normalize(preprocessed_frame[FrameGroup.LR_INP.value])
+        res['HRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.wavelet_transform(res['HR']))
+        res['LRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.wavelet_transform(res['LR']))
+
+        if self.reconstruction_frame_type == ReconstructionFrameType.IRRIDIANCE:
+            res['HRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(res['HR'], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF']))
+            res['LRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(res['LR'], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF_LR']))
+
+        res['HRTonemapped'] = self.tonemap(res['HR'])
+        res['LRTonemapped'] = self.tonemap(res['LR'])
+        return res
 
     def tonemap(
         self,
