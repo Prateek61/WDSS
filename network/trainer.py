@@ -46,14 +46,18 @@ class Trainer:
         self.train_loader = WDSSDataLoader(
             self.train_dataset,
             upscale_factors=[
-                float(key) for key in self.settings.dataset_config["resolutions"].keys()
-            ].remove(1.0)
+                float(key) for key in settings.dataset_config["resolutions"].keys() if float(key) != 1.0
+            ],
+            batch_size=8,
+            shuffle=True
         )
         self.val_loader = WDSSDataLoader(
             self.val_dataset,
             upscale_factors=[
-                float(key) for key in self.settings.dataset_config["resolutions"].keys()
-            ].remove(1.0)
+                float(key) for key in settings.dataset_config["resolutions"].keys() if float(key) != 1.0
+            ],
+            batch_size=self.settings['batch_size'],
+            shuffle=False
         )
 
     def train(self, epochs: int = 1) -> None:
@@ -79,7 +83,6 @@ class Trainer:
     def _train_batch(self, batch: Dict[str, torch.Tensor | Dict[str, torch.Tensor]] = {}) -> Tuple[Optional[float], Dict[str, float]]:
         """Train the model on a batch of data and return the loss and metrics.
         """
-
         if not batch:
             return None, {}
         
@@ -158,7 +161,7 @@ class Trainer:
         """
         # Initialize variables
         total_loss: float = 0.0
-        metrics: Dict[str, float] = {}
+        total_metrics: Dict[str, float] = {}
         num_batches = len(self.train_loader)
 
         # Initialize the progress bar
@@ -169,7 +172,7 @@ class Trainer:
             leave=True
         )
         progress_bar.set_description(f'Train Epoch: {self.total_epochs + 1} : {curr_epoch + 1}/{epochs}')
-        progress_bar.set_postfix(loss=float('nan'), **metrics)
+        progress_bar.set_postfix(loss=float('nan'))
 
         # Set the model to training mode
         self.model.train()
@@ -179,20 +182,20 @@ class Trainer:
             args=({}) # Pass an empty dictionary to avoid errors
         )
 
-        for i, batch in enumerate(self.train_dataset):
+        for i, batch in enumerate(self.train_loader):
             # Wait for the previous batch to finish
             loss, metrics = async_result.get()
             if loss is not None:
                 total_loss += loss
                 for key, value in metrics.items():
-                    if key not in metrics:
-                        metrics[key] = 0.0
-                    metrics[key] += value
+                    if key not in total_metrics:
+                        total_metrics[key] = 0.0
+                    total_metrics[key] += value
 
                 # Update the progress bar
                 progress_bar.update(1)
                 progress_bar.set_postfix(loss=total_loss / (i + 1), **{
-                    k: v / (i + 1) for k, v in metrics.items()
+                    k: v / (i + 1) for k, v in total_metrics.items()
                 })
 
             # Start the next batch
@@ -203,30 +206,30 @@ class Trainer:
 
         # Wait for the last batch to finish
         loss, metrics = async_result.get()
-        total_loss += loss if loss is not None else 0.0
+        total_loss += loss
         for key, value in metrics.items():
-            if key not in metrics:
-                metrics[key] = 0.0
-            metrics[key] += value
+            if key not in total_metrics:
+                total_metrics[key] = 0.0
+            total_metrics[key] += value
 
         # Average the metrics
-        metrics = {k: v / num_batches for k, v in metrics.items()}
+        total_metrics = {k: v / num_batches for k, v in total_metrics.items()}
         total_loss /= num_batches
 
         # Update the learning progress bar
         progress_bar.update(1)
-        progress_bar.set_postfix(loss=total_loss, **metrics)
+        progress_bar.set_postfix(loss=total_loss, **total_metrics)
         # Close the progress bar
         progress_bar.close()
 
-        return total_loss, metrics
+        return total_loss, total_metrics
     
     def _validate_single_epoch(self, curr_epoch: int = 0, epochs: int = 0) -> Tuple[float, Dict[str, float]]:
         """Validate the model for a single epoch and return the average loss and metrics.
         """
         # Initialize variables
         total_loss: float = 0.0
-        metrics: Dict[str, float] = {}
+        total_metrics: Dict[str, float] = {}
         num_batches = len(self.val_loader)
 
         # Initialize the progress bar
@@ -237,7 +240,7 @@ class Trainer:
             leave=True
         )
         progress_bar.set_description(f'Validation Epoch: {self.total_epochs + 1} : {curr_epoch + 1}/{epochs}')
-        progress_bar.set_postfix(loss=float('nan'), **metrics)
+        progress_bar.set_postfix(loss=float('nan'), **total_metrics)
 
         # Set the model to evaluation mode
         self.model.eval()
@@ -247,20 +250,20 @@ class Trainer:
             args=({}) # Pass an empty dictionary to avoid errors
         )
 
-        for i, batch in enumerate(self.val_dataset):
+        for i, batch in enumerate(self.val_loader):
             # Wait for the previous batch to finish
             loss, metrics = async_result.get()
             if loss is not None:
                 total_loss += loss
                 for key, value in metrics.items():
-                    if key not in metrics:
-                        metrics[key] = 0.0
-                    metrics[key] += value
+                    if key not in total_metrics:
+                        total_metrics[key] = 0.0
+                    total_metrics[key] += value
 
                 # Update the progress bar
                 progress_bar.update(1)
                 progress_bar.set_postfix(loss=total_loss / (i + 1), **{
-                    k: v / (i + 1) for k, v in metrics.items()
+                    k: v / (i + 1) for k, v in total_metrics.items()
                 })
 
             # Start the next batch
@@ -273,22 +276,22 @@ class Trainer:
         loss, metrics = async_result.get()
         total_loss += loss if loss is not None else 0.0
         for key, value in metrics.items():
-            if key not in metrics:
-                metrics[key] = 0.0
-            metrics[key] += value
+            if key not in total_metrics:
+                total_metrics[key] = 0.0
+            total_metrics[key] += value
 
         # Average the metrics
-        metrics = {k: v / num_batches for k, v in metrics.items()}
+        total_metrics = {k: v / num_batches for k, v in total_metrics.items()}
         total_loss /= num_batches
 
         # Update the learning progress bar
         progress_bar.update(1)
-        progress_bar.set_postfix(loss=total_loss, **metrics)
+        progress_bar.set_postfix(loss=total_loss, **total_metrics)
         
         # Close the progress bar
         progress_bar.close()
 
-        return total_loss, metrics
+        return total_loss, total_metrics
     
     def save_checkpoint(self, file_name: str, val_loss: float) -> None:
         """Save the model checkpoint to a file.

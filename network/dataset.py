@@ -271,11 +271,14 @@ class WDSSDataLoader(DataLoader):
     def __init__(
         self,
         dataset: WDSSDataset,
-        upscale_factors: List[Tuple[int, float]], # Upscale factors with their probabilities
+        upscale_factors: List[float], # Upscale factors with their probabilities
+        batch_size: int = 1,
+        shuffle: bool = False,
+        num_workers: int = 0,
         *args,
         **kwargs
     ):
-        super().__init__(dataset, *args, **kwargs)
+        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, *args, **kwargs)
         self.upscale_factors = upscale_factors
 
     def __iter__(self):
@@ -285,13 +288,6 @@ class WDSSDataLoader(DataLoader):
         return super().__iter__()
     
     def _select_random_upscale_factor(self) -> float:
-        """Select a random upscale factor based on the probabilities
+        """Select a random upscale factor
         """
-        total = sum(prob for _, prob in self.upscale_factors)
-        rand_val = randint(0, total - 1)
-        cumulative_prob = 0
-        for factor, prob in self.upscale_factors:
-            cumulative_prob += prob
-            if rand_val < cumulative_prob:
-                return factor
-        return self.upscale_factors[-1][0]
+        return self.upscale_factors[randint(0, len(self.upscale_factors) - 1)]
