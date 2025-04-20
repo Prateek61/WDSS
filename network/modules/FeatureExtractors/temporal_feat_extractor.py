@@ -26,8 +26,10 @@ class TemporalFeatExtractor(nn.Module):
         c1 = in_channels
         for i in range(len(layers)):
             netlist.append(LightWeightGatedConv2D(c1, layers[i], kernel_size=3, padding=1, stride=1))
+            netlist.append(nn.ReLU(inplace=True))
             c1 = layers[i]
         netlist.append(LightWeightGatedConv2D(c1, out_channels, kernel_size=3, padding=1, stride=1))
+        netlist.append(nn.ReLU(inplace=True))
         self.net = nn.Sequential(*netlist)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

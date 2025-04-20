@@ -59,16 +59,16 @@ class GBFeatureExtractorDoubleResidual(nn.Module):
             raise ValueError("Number of layers must be at least 2")
 
         netlist.append(nn.Conv2d(in_channels, layer_size, kernel_size=3, padding=1, stride=1))
-        netlist.append(nn.ReLU())
+        netlist.append(nn.ReLU(inplace=True))
         netlist.append(doubleResidualConv(layer_size))
 
         for i in range(num_layers - 2):
             netlist.append(nn.Conv2d(layer_size, layer_size, kernel_size=3, padding=2, stride=1, dilation=2))
-            netlist.append(nn.ReLU())
+            netlist.append(nn.ReLU(inplace=True))
             netlist.append(doubleResidualConv(layer_size))
 
         netlist.append(nn.Conv2d(layer_size, out_channels, kernel_size=3, padding=2, stride=1, dilation=2))
-        netlist.append(nn.ReLU())
+        netlist.append(nn.ReLU(inplace=True))
         netlist.append(doubleResidualConv(out_channels))
 
         self.net = nn.Sequential(*netlist)
