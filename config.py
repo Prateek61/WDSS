@@ -39,5 +39,9 @@ class Settings:
         with open(os.path.join(self.get_base_path(), 'config.json'), 'w') as f:
             json.dump(self.settings_raw, f, indent=4)
 
+    # Overload the [] operator to access settings like a dictionary
+    def __getitem__(self, key: str) -> Any:
+        return self.settings_raw[key]
+
     def __str__(self):
         return f"Settings: {self.__dict__}"

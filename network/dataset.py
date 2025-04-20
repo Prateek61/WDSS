@@ -199,6 +199,24 @@ class WDSSDataset(Dataset):
         return folder + file_name
     
     @staticmethod
+    def batch_to_device(
+        batch: Dict[str, torch.Tensor | Dict[str, torch.Tensor]],
+        device: torch.device
+    ):
+        """Move the batch to the device
+        """
+        for key, value in batch.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    if isinstance(sub_value, torch.Tensor):
+                        sub_value = sub_value.to(device)
+            else:
+                if isinstance(batch[key], torch.Tensor):
+                    batch[key] = value.to(device)
+
+        return batch
+
+    @staticmethod
     def get_datasets(
         settings: Settings
     ) -> Tuple['WDSSDataset', 'WDSSDataset', 'WDSSDataset']:

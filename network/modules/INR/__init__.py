@@ -1,1 +1,1 @@
-from .fminr import *
+from .fminr_relu import *
