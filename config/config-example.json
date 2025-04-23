@@ -1,85 +1,60 @@
 {
-    "job_name": "pp_pretonemapped",
+    "job_name": "testing",
+    "description": "Testing configurations",
     "out_dir": "out",
     "model_dir": "model",
     "log_dir": "logs",
-    "frames_per_zip": 120,
-    "patched": true,
-    "patch_size": 256,
+    "model_save_interval": 1,
+    "image_log_interval": 1,
     "batch_size": 8,
-    "test_images_idx": [0, 12, 40, 180],
-    "system_log_file": "logs/system.log",
-    "model_save_interval": 5,
-    "output_interval": 1,
-    "upscale_factor": 2,
-    "num_threads": 8,
-    "multi_patches_per_frame": false,
-    "train_dir": "D:\\Dev\\MinorProjDataset\\V5\\Data\\train",
-    "val_dir": "D:\\Dev\\MinorProjDataset\\V5\\Data\\val",
-    "test_dir": "D:\\Dev\\MinorProjDataset\\V5\\Data\\test",
-    "model_config": {
-        "name": "WDSS",
-        "version": 1.0,
-        "sum_lr_wavelet": false,
-        "has_feature_fusion": true,
-        "has_fminr": true,
-        "lr_feat_extractor": {
-            "name": "LRFrameFeatureExtractor",
-            "version": 1.0,
-            "in_channels": 12,
-            "out_channels": 64,
-            "layers": [32, 48, 48]
-        },
-        "hr_gb_feat_extractor": {
-            "name": "GBFeatureExtractor",
-            "version": 1.0,
-            "in_channels": 48,
-            "num_layers": 5,
-            "layer_size": 64
-        },
-        "temporal_feat_extractor": {
-            "name": "TemporalFeatureExtractor",
-            "version": 1.0,
-            "in_channels": 32,
-            "out_channels": 16,
-            "layers": [32, 32]
-        },
-        "feature_fusion": {
-            "name": "FeatureFusion",
-            "version": 1.0,
-            "in_channels": 80,
-            "out_channels": 12,
-            "layers": [64, 48]
-        },
-        "fminr": {
-            "name": "FMINR",
-            "version": 1.0,
-            "lr_feat_c": 32,
-            "gb_feat_c": 32,
-            "mlp_inp_c": 64,
-            "out_c": 12,
-            "fourier_mapped": true,
-            "mlp_config": {
-                "type": "relu",
-                "version": 1.0,
-                "in_channels": 64,
-                "out_channels": 12,
-                "num_layers": 4,
-                "layer_size": 64
+    "test_images_idx": [
+        [0, 2.0],
+        [80, 2.0]
+    ],
+    "dataset_config": {
+        "train_dir": "D:\\Dev\\MinorProjDataset\\V6\\train",
+        "val_dir": "D:\\Dev\\MinorProjDataset\\V6\\train",
+        "test_dir": "D:\\Dev\\MinorProjDataset\\V6\\train",
+        "frames_per_zip": 180,
+        "patch_size": 512,
+        "multi_patches_per_frame": false,
+        "multiprocessing": true,
+        "resolutions": {
+            "1": {
+                "folder": "1080P",
+                "width": 1920,
+                "height": 1080
+            },
+            "2": {
+                "folder": "540P",
+                "width": 960,
+                "height": 540
+            },
+            "3": {
+                "folder": "360P",
+                "width": 640,
+                "height": 360
+            },
+            "4": {
+                "folder": "270P",
+                "width": 480,
+                "height": 270
             }
         }
     },
     "preprocessor_config": {
-        "reconstruction_frame_type": "PreTonemapped",
-        "log_scale_pre_tonemapped": true,
-        "pre_tonemapped_normalization_factor": 1.0,
-        "tonemapper": "Hable-10",
-        "log_scale_irridiance": true,
-        "irridiance_normalization_factor": 50.0,
+        "reconstruction_frame_type": "Irridiance",
+        "tonemapper": "Reinhard",
         "spatial_mask_threasholds": {
-            "depth": 0.04,
-            "normal": 0.4,
+            "depth": 0.01,
+            "normal": 0.9,
             "albedo": 0.1
-        }
+        },
+        "pre_tonemap_normalizers": [],
+        "irridiance_normalizers": []
+    },
+    "model_config": {
+        "name": "WDSSRegular",
+        "version": 1.0
     }
 }
