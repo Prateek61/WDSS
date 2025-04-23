@@ -2,7 +2,7 @@ import torch
 import json
 import os
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -22,6 +22,9 @@ class Settings:
         self.job_name: str = settings["job_name"]
         self.preprocessor_config: Dict[str, Any] = settings["preprocessor_config"]
         self.dataset_config: Dict[str, Any] = settings["dataset_config"]
+        self.test_images_idx: List[Tuple[int, float]] = settings["test_images_idx"]
+        self.model_save_interval: int = settings["model_save_interval"]
+        self.image_log_interval: int = settings["image_log_interval"]
 
     def get_full_path(self, folder: str) -> str:
         return os.path.join(self.out_dir, f'{self.job_name}', folder)

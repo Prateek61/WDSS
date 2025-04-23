@@ -6,6 +6,7 @@ from .masks import Mask
 from .brdf import BRDFProcessor
 from .wavelet import WaveletProcessor
 from .imge_normalizer import BaseImageNormalizer
+from config import device
 
 from enum import Enum
 from typing import Dict, Any, Tuple, List
@@ -34,9 +35,10 @@ class Preprocessor:
     def preprocess(
         self,
         raw_frames: Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]],
-        upscale_factor: float
     ) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
         res: Dict[str, torch.Tensor | Dict[str, torch.Tensor]] = {}
+
+        upscale_factor = float(raw_frames[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH].shape[-2]) / float(raw_frames[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH].shape[-2])
 
         spatial_mask, temporal_mask = self._get_temporal_and_spatial_mask(raw_frames, upscale_factor)
         gb_inp = self._construct_gbuffer_input(raw_frames, spatial_mask)
@@ -68,22 +70,28 @@ class Preprocessor:
     # For logging to tensorboard
     def get_log(self,
         raw_frames: Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]],
-        upscale_factor: float
     ) -> Dict[str, torch.Tensor]:
         res: Dict[str, torch.Tensor] = {}
 
-        preprocessed_frame = self.preprocess(raw_frames, upscale_factor)
+        preprocessed_frame = self.preprocess(raw_frames)
+
         res['HR'] = self.exponential_normalizer.normalize(preprocessed_frame[FrameGroup.GT.value])
         res['LR'] = self.exponential_normalizer.normalize(preprocessed_frame[FrameGroup.LR_INP.value])
-        res['HRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.wavelet_transform(res['HR']))
-        res['LRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.wavelet_transform(res['LR']))
+
+        res['HRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.batch_wt(res['HR'].unsqueeze(0).to(device)).squeeze(0)).to(device='cpu')
+        res['LRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.batch_wt(res['LR'].unsqueeze(0).to(device)).squeeze(0)).to(device='cpu')
 
         if self.reconstruction_frame_type == ReconstructionFrameType.IRRIDIANCE:
-            res['HRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(res['HR'], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF']))
-            res['LRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(res['LR'], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF_LR']))
+            res['HRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(preprocessed_frame[FrameGroup.GT.value], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF']))
+            res['LRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(preprocessed_frame[FrameGroup.LR_INP.value], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF_LR']))
 
-        res['HRTonemapped'] = self.tonemap(res['HR'])
-        res['LRTonemapped'] = self.tonemap(res['LR'])
+        if self.reconstruction_frame_type == ReconstructionFrameType.IRRIDIANCE:
+            res['HRTonemapped'] = self.tonemap(res['HRRemodulated'])
+            res['LRTonemapped'] = self.tonemap(res['LRRemodulated'])
+        else:
+            res['HRTonemapped'] = self.tonemap(res['HR'])
+            res['LRTonemapped'] = self.tonemap(res['LR'])
+
         return res
 
     def tonemap(
@@ -92,7 +100,7 @@ class Preprocessor:
     ) -> torch.Tensor:
         """Tonemap the input frame
         """
-        self.tonemapper.forward(frame)
+        return self.tonemapper.forward(frame)
     
     def _construct_gbuffer_input(
         self,

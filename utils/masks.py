@@ -30,7 +30,6 @@ class Mask:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute the spatial and temporal masks.
         """
-
         # Upsample the low-resolution images
         upsampled_lr_base_color = ImageUtils.upsample(lr_base_color, upscale_factor)
         upsampled_lr_normal = ImageUtils.upsample(lr_normal, upscale_factor)

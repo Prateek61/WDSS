@@ -60,9 +60,13 @@ class Trainer:
             shuffle=False
         )
 
-    def train(self, epochs: int = 1) -> None:
+    def train(self, epochs: int = 1, no_log_gt: bool = False) -> None:
         """Train the model for a specified number of epochs.
         """
+
+        if self.total_epochs == 0 and not no_log_gt:
+            self.log_gt_images()
+            self.log_test_frames()
 
         for epoch in range(epochs):
             train_loss, train_metrics = self._train_single_epoch(epoch, epochs)
@@ -70,19 +74,34 @@ class Trainer:
 
             self.scheduler.step()
 
+            # Increment the total epochs
+            self.total_epochs += 1
+
+            # Log the losses
+            self.log_losses(
+                train_loss,
+                val_loss,
+                train_metrics,
+                val_metrics,
+                step=self.total_epochs
+            )
+
             # Save the model checkpoint
             self.save_checkpoint('latest.pth', val_loss)
             if val_loss < self.best_val_loss:
                 self.best_val_loss = val_loss
                 self.save_checkpoint('best.pth', val_loss)
 
-            if self.total_epochs % self.settings['model_save_interval'] == 0:
+            if self.total_epochs % self.settings.model_save_interval == 0:
                 self.save_checkpoint(f'epoch_{self.total_epochs}.pth', val_loss)
 
+            if self.total_epochs % self.settings.image_log_interval == 0:
+                self.log_test_frames()
 
     def _train_batch(self, batch: Dict[str, torch.Tensor | Dict[str, torch.Tensor]] = {}) -> Tuple[Optional[float], Dict[str, float]]:
         """Train the model on a batch of data and return the loss and metrics.
         """
+
         if not batch:
             return None, {}
         
@@ -97,7 +116,7 @@ class Trainer:
         # Zero the gradients
         self.optimizer.zero_grad()
 
-        upscale_factor: float = hr_gt.shape[2] / lr_inp.shape[2]
+        upscale_factor: float = hr_gt.shape[-2] / lr_inp.shape[-2]
 
         # Forward pass
         wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, upscale_factor)
@@ -293,16 +312,16 @@ class Trainer:
 
         return total_loss, total_metrics
     
-    def save_checkpoint(self, file_name: str, val_loss: float) -> None:
+    def save_checkpoint(self, file_name: str, val_loss: float = float('inf')) -> None:
         """Save the model checkpoint to a file.
         """
         ModelUtils.save_checkpoint(
             model=self.model,
             optimizer=self.optimizer,
             scheduler=self.scheduler,
-            epoch=self.total_epochs,
+            step=self.total_epochs,
             validation_loss=val_loss,
-            file_name=os.path.join(self.settings.model_path(), file_name)
+            checkpoint_path=os.path.join(self.settings.model_path(), file_name)
         )
 
     def load_checkpoint(self, file_name: str) -> None:
@@ -327,19 +346,83 @@ class Trainer:
         """
         self.load_checkpoint('latest.pth')
 
+    def log_gt_images(self):
+        """Log the GT and LR images to the TensorBoard.
+        """
+
+        for index, upscale_factor in self.settings.test_images_idx:
+            frame = self.test_dataset.get_log_frame(index, upscale_factor, True)
+
+            for key in frame:
+                img = frame[key]
+                if 'Wavelet' in key:
+                    img = ImageUtils.stack_wavelet(img)
+
+                self.log_image(
+                    img.detach().cpu(),
+                    f'{key}_{index}',
+                    None
+                )
+
+    # @wrap_try
+    def log_test_frames(self) -> None:
+        """Log the test frames to the TensorBoard.
+        """
+
+        for index, upscale_factor in self.settings.test_images_idx:
+            frame = self.inference(index, upscale_factor)
+
+            for key in frame:
+                img = frame[key]
+                if 'Wavelet' in key:
+                    img = ImageUtils.stack_wavelet(img)
+
+                self.log_image(
+                    img.detach().cpu(),
+                    f'{key}_{index}',
+                    self.total_epochs
+                )
+
+    def inference(self, index: int, upscale_factor: float) -> Dict[str, torch.Tensor]:
+        """Run inference on a single image and return the output.
+        """    
+        res: Dict[str, torch.Tensor] = {}
+        frame = self.test_dataset.get_item(index, upscale_factor, True)
+        frame = WDSSDataset.batch_to_device(frame, device)
+        frame = WDSSDataset.unsqueeze_batch(frame)
+
+        lr_inp = frame[FrameGroup.LR_INP.value]
+        gb_inp = frame[FrameGroup.GB_INP.value]
+        temporal_inp = frame[FrameGroup.TEMPORAL_INP.value]
+
+        upscale_factor: float = frame[FrameGroup.GT.value].shape[-2] / lr_inp.shape[-2] 
+
+        self.model.eval()
+        with torch.no_grad():
+            wavelet, img = self.model.forward(lr_inp, gb_inp, temporal_inp, upscale_factor)
+
+        out = self.test_dataset.preprocessor.postprocess(
+            img,
+            extra=frame[FrameGroup.EXTRA.value]
+        )
+
+        res['Pred'] = img
+        res['PredWavelet'] = wavelet
+        res['PredTonemapped'] = self.test_dataset.preprocessor.tonemap(out)
+        res['PredReconstructed'] = out
+
+        return res
+
     def log_losses(self, train_loss: float, val_loss: float, train_metrics: Dict[str, float], val_metrics: Dict[str, float], step: int | None = None) -> None:
         """Log the training and validation losses and metrics to the TensorBoard.
         """
-        self.logger.log_scalar('train/loss', train_loss, step)
-        self.logger.log_scalar('val/loss', val_loss, step)
-
-        for key, value in train_metrics.items():
-            self.logger.log_scalar(f'train/{key}', value, step)
-
-        for key, value in val_metrics.items():
-            self.logger.log_scalar(f'val/{key}', value, step)
+        self.logger.log_scalars('loss', {'train': train_loss, 'val': val_loss}, step)
+        for key in train_metrics:
+            self.logger.log_scalars(key, {'train': train_metrics[key], 'val': val_metrics.get(key, float('nan'))}, step)
 
     def log_image(self, img: torch.Tensor, tag: str = "", step: int | None = None):
         """Log an image to the TensorBoard.
         """
+        if img.dim() == 4:
+            img = img.squeeze(0)
         self.logger.log_image(tag, img, step)

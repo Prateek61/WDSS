@@ -295,7 +295,11 @@ class ImageUtils:
     def stack_wavelet(wavelet: torch.Tensor) -> torch.Tensor:
         """Stack the wavelets for display.
         """
-
+        batch_dim: bool = wavelet.dim() == 4
+        if batch_dim:
+            # If batch dimension is present, remove it
+            wavelet = wavelet.squeeze(0)
+        
         _, h, w = wavelet.shape
 
         # Get the coefficients
@@ -312,6 +316,10 @@ class ImageUtils:
         wavelet_img[:, :h, w:] = cV
         wavelet_img[:, h:, :w] = cD
         wavelet_img[:, h:, w:] = cH
+
+        if batch_dim:
+            # If batch dimension was present, add it back
+            wavelet_img = wavelet_img.unsqueeze(0)
 
         return wavelet_img
 

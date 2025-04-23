@@ -64,7 +64,7 @@ class WDSSRegular(ModelBase):
 
         # Feature fusion
         # Upsample lr_ff
-        lr_ff = ImageUtils.upsample(lr_ff, 2)
+        lr_ff = ImageUtils.upsample(lr_ff, upscale_factor)
         fusion_feat = self.feature_fusion.forward(torch.cat([lr_ff, gb_ff, temporal_feat], dim=1))
         # INR
         inr_out = self.fminr.forward(lr_inr, gb_inr, upscale_factor)
@@ -121,7 +121,7 @@ class WDSSRegular(ModelBase):
         # Feature fusion
         # Upsample lr_ff
         start = datetime.now()
-        lr_ff = ImageUtils.upsample(lr_ff, 2)
+        lr_ff = ImageUtils.upsample(lr_ff, upscale_factor)
         fusion_feat = self.feature_fusion.forward(torch.cat([lr_ff, gb_ff, temporal_feat], dim=1))
         torch.cuda.synchronize()
         end = datetime.now()

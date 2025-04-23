@@ -62,17 +62,24 @@ class WDSSDataset(Dataset):
     def __len__(self) -> int:
         return self.total_frames
     
-    @wrap_try
+    # @wrap_try
     def __getitem__(self, index) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
         raw_frames = self.get_raw_frames(index)
-        return self.preprocessor.preprocess(raw_frames, 2.0)
+        return self.preprocessor.preprocess(raw_frames)
     
-    @wrap_try
+    # @wrap_try
     def get_item(self, index, upscale_factor: float, no_patch: bool = False) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
         """Get item from the dataset
         """
         raw_frames = self.get_raw_frames(index, upscale_factor, no_patch)
-        return self.preprocessor.preprocess(raw_frames, upscale_factor)
+        return self.preprocessor.preprocess(raw_frames)
+    
+    # @wrap_try
+    def get_log_frame(self, index: int, upscale_factor: float = 2.0, no_patch: bool = False) -> torch.Tensor:
+        """Get log frame from the dataset
+        """
+        raw_frames = self.get_raw_frames(index, upscale_factor, no_patch)
+        return self.preprocessor.get_log(raw_frames)
 
     def get_raw_frames(self, idx: int, upscale_factor: float = 2.0, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]]:
         """Get raw frames from the dataset
@@ -209,10 +216,28 @@ class WDSSDataset(Dataset):
             if isinstance(value, dict):
                 for sub_key, sub_value in value.items():
                     if isinstance(sub_value, torch.Tensor):
-                        sub_value = sub_value.to(device)
+                        batch[key][sub_key] = sub_value.to(device)
             else:
                 if isinstance(batch[key], torch.Tensor):
                     batch[key] = value.to(device)
+
+        return batch
+    
+    @staticmethod
+    def unsqueeze_batch(
+        batch: Dict[str, torch.Tensor | Dict[str, torch.Tensor]],
+        dim: int = 0
+    ) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
+        """Unsqueeze the batch
+        """
+        for key, value in batch.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    if isinstance(sub_value, torch.Tensor):
+                        batch[key][sub_key] = sub_value.unsqueeze(dim)
+            else:
+                if isinstance(batch[key], torch.Tensor):
+                    batch[key] = value.unsqueeze(dim)
 
         return batch
 
