@@ -331,7 +331,7 @@ class Trainer:
             model=self.model,
             optimizer=self.optimizer,
             scheduler=self.scheduler,
-            file_name=os.path.join(self.settings.model_path(), file_name)
+            checkpoint_path=os.path.join(self.settings.model_path(), file_name)
         )
         self.total_epochs = total_epochs
         self.best_val_loss = validation_loss

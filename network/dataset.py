@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple
 
 class ZipUtils:
     @staticmethod
+    @wrap_try
     def get_frame(zip_ref: ZipFile, file_path: str) -> torch.Tensor:
         buffer = zip_ref.read(file_path)
 

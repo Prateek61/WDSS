@@ -296,30 +296,33 @@ class ImageUtils:
         """Stack the wavelets for display.
         """
         batch_dim: bool = wavelet.dim() == 4
-        if batch_dim:
+        if not batch_dim:
             # If batch dimension is present, remove it
-            wavelet = wavelet.squeeze(0)
+            wavelet = wavelet.unsqueeze(0)
         
-        _, h, w = wavelet.shape
+        b, c, h, w = wavelet.shape
+
+        if c != 12:
+            raise ValueError(f"Expected 12 channels, got {c} channels.")
 
         # Get the coefficients
-        cA = wavelet[0:3, :, :]
-        cH = wavelet[3:6, :, :]
-        cV = wavelet[6:9, :, :]
-        cD = wavelet[9:12, :, :]
+        cA = wavelet[:, 0:3, :, :]
+        cH = wavelet[:, 3:6, :, :]
+        cV = wavelet[:, 6:9, :, :]
+        cD = wavelet[:, 9:12, :, :]
 
         # Stack the wavelets
         # Final image will be of shape (3, 2H, 2W)
-        wavelet_img = torch.zeros(3, 2*h, 2*w)
+        wavelet_img = torch.zeros(b, 3, 2*h, 2*w)
 
-        wavelet_img[:, :h, :w] = cA
-        wavelet_img[:, :h, w:] = cV
-        wavelet_img[:, h:, :w] = cD
-        wavelet_img[:, h:, w:] = cH
+        wavelet_img[:, :, :h, :w] = cA
+        wavelet_img[:, :, :h, w:] = cV
+        wavelet_img[:, :, h:, :w] = cD
+        wavelet_img[:, :, h:, w:] = cH
 
-        if batch_dim:
+        if not batch_dim:
             # If batch dimension was present, add it back
-            wavelet_img = wavelet_img.unsqueeze(0)
+            wavelet_img = wavelet_img.squeeze(0)
 
         return wavelet_img
 
