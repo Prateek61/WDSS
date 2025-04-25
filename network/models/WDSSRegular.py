@@ -45,8 +45,6 @@ class WDSSRegular(ModelBase):
             mlp_layer_size=64
         )
         self.final_wavelet_conv = nn.Conv2d(12, 12, kernel_size=3, padding=1, stride=1)
-        
-        # self.final_image_conv = nn.Conv2d(3, 3, kernel_size=3, padding=1, stride=1)
 
     def forward(self, lr_frame, hr_gbuffer, temporal, upscale_factor):
         # Pixel unshuffle
@@ -76,9 +74,6 @@ class WDSSRegular(ModelBase):
 
         # Inverse wavelet transform
         image = WaveletProcessor.batch_iwt(wavelet_out).clamp(min=0.0, max=None)
-
-        # The output image is green when using this conv, idk why
-        # image = self.final_image_conv.forward(image).clamp(min=0.0, max=None)
 
         return wavelet_out, image
     

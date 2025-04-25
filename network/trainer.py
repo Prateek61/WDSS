@@ -360,7 +360,7 @@ class Trainer:
 
                 self.log_image(
                     img.detach().cpu(),
-                    f'{key}_{index}',
+                    f'{key}/{index}/{upscale_factor:.1f}x',
                     None
                 )
 
@@ -379,7 +379,7 @@ class Trainer:
 
                 self.log_image(
                     img.detach().cpu(),
-                    f'{key}_{index}',
+                    f'{key}/{index}/{upscale_factor:.1f}x',
                     self.total_epochs
                 )
 
