@@ -95,7 +95,7 @@ class ImageEvaluator(nn.Module):
         if ImageEvaluator.lpips_model is None:
             ImageEvaluator.initialize_lpips()
         
-        input_device = input.device
+        input_device = img1.device
 
         if input_device != ImageEvaluator._lpips_device:
             img1 = img1.to(ImageEvaluator._lpips_device)

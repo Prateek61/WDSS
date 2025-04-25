@@ -134,10 +134,6 @@ class Mask:
     ) -> torch.Tensor:
         """Warp the frame using the motion vector.
         """
-        # Scale motion vector, is ideally not needed but there is issue with our dataset
-        # We had to increase the render resolution by 25% to acquire the correct resolution G-buffers
-        # But this caused the motion vector to be 25% larger than the original frame
-        motion_vector = motion_vector * 0.75
 
         n, c, h, w = frame.shape
         device = frame.device
