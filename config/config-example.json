@@ -12,9 +12,9 @@
         [80, 2.0]
     ],
     "dataset_config": {
-        "train_dir": "D:\\Dev\\MinorProjDataset\\V6\\train",
-        "val_dir": "D:\\Dev\\MinorProjDataset\\V6\\train",
-        "test_dir": "D:\\Dev\\MinorProjDataset\\V6\\train",
+        "train_dir": "Data/train",
+        "val_dir": "Data/val",
+        "test_dir": "Data/val",
         "frames_per_zip": 180,
         "patch_size": 512,
         "multi_patches_per_frame": false,
@@ -44,7 +44,7 @@
     },
     "preprocessor_config": {
         "reconstruction_frame_type": "Irridiance",
-        "tonemapper": "Reinhard",
+        "tonemapper": "Hable-10",
         "spatial_mask_threasholds": {
             "depth": 0.01,
             "normal": 0.9,

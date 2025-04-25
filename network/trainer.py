@@ -48,7 +48,7 @@ class Trainer:
             upscale_factors=[
                 float(key) for key in settings.dataset_config["resolutions"].keys() if float(key) != 1.0
             ],
-            batch_size=8,
+            batch_size=self.settings['batch_size'],
             shuffle=True
         )
         self.val_loader = WDSSDataLoader(
