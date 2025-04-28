@@ -16,15 +16,38 @@ from utils.preprocessor import Preprocessor
 from typing import Dict, List, Tuple
 
 class ZipUtils:
+    """Utility class to handle zip files
+    """
+    dynamic_extraction: bool = False
+    root_dir: str = None
+
     @staticmethod
     @wrap_try
     def get_frame(zip_ref: ZipFile, file_path: str) -> torch.Tensor:
-        buffer = zip_ref.read(file_path)
+        """Get the frame from the zip file
+        """
+        real_file_path = os.path.join(ZipUtils.root_dir, zip_ref.filename.split('.')[0], file_path)
+        exists: bool = os.path.exists(real_file_path) and ZipUtils.dynamic_extraction
+        
+        if exists:
+            # Read the file from disk
+            with open(real_file_path, 'rb') as f:
+                buffer = f.read()
+        else:
+            buffer = zip_ref.read(file_path)
 
         if not buffer:
             raise ValueError(f"Failed to read file: {file_path} from zip.")
 
         frame = ImageUtils.decode_exr_image_opencv(buffer)
+
+        if not exists and ZipUtils.dynamic_extraction:
+            # Create the directory if it doesn't exist
+            os.makedirs(os.path.dirname(real_file_path), exist_ok=True)
+            # Write the file to disk
+            with open(real_file_path, 'wb') as f:
+                f.write(buffer)
+
         return torch.from_numpy(frame).permute(2, 0, 1)
     
 class WDSSDataset(Dataset):
@@ -34,7 +57,7 @@ class WDSSDataset(Dataset):
         frames_per_zip: int,
         hr_patch_size: int, # 0 for no patching
         multi_patches_per_frame: bool,
-        resolutions: Dict[int, Tuple[str, Tuple[int, int]]], # Dict mapping scale factor to (folder_name, (height, width))
+        resolutions: Dict[float, Tuple[str, Tuple[int, int]]], # Dict mapping scale factor to (folder_name, (height, width))
         multiprocessing: bool,
         preprocessor: Preprocessor
     ):
@@ -45,11 +68,14 @@ class WDSSDataset(Dataset):
         self.resolutions = resolutions
         self.multiprocessing = multiprocessing
         self.preprocessor = preprocessor
+        ZipUtils.root_dir = root_dir
+        self.default_upscale_factor = 2.0
+        self.upscale_factors = [k for k in resolutions.keys() if k != 1.0]
 
         self._initialize()
 
     def _initialize(self):
-        self.compressed_files = os.listdir(self.root_dir)
+        self.compressed_files = [f for f in os.listdir(self.root_dir) if f.endswith('.zip')]
         self.patch = Patch(
             high_resolution=self.resolutions[1][1],
             high_resolution_patch_size=self.hr_patch_size,
@@ -65,7 +91,7 @@ class WDSSDataset(Dataset):
     
     # @wrap_try
     def __getitem__(self, index) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
-        raw_frames = self.get_raw_frames(index)
+        raw_frames = self.get_raw_frames(index, self.default_upscale_factor)
         return self.preprocessor.preprocess(raw_frames)
     
     # @wrap_try
@@ -89,6 +115,16 @@ class WDSSDataset(Dataset):
             return self._raw_frames_parallel(idx, upscale_factor, no_patch)
         else:
             return self._raw_frames_no_parallel(idx, upscale_factor, no_patch)
+        
+    def get_random_upscale_factor(self) -> float:
+        """Get a random upscale factor from the list of available upscale factors
+        """
+        return self.upscale_factors[randint(0, len(self.upscale_factors) - 1)]
+    
+    def set_random_upscale_factor(self) -> None:
+        """Set a random upscale factor from the list of available upscale factors
+        """
+        self.default_upscale_factor = self.get_random_upscale_factor()
 
     def _raw_frames_no_parallel(self, idx: int, upscale_factor: float = 2.0, no_patch: bool = False) -> Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]]:
         """Get raw frames from the dataset
@@ -259,7 +295,7 @@ class WDSSDataset(Dataset):
         multiprocessing = settings.dataset_config['multiprocessing']
         resolutions = {}
         for key, value in settings.dataset_config['resolutions'].items():
-            resolutions[int(key)] = (value["folder"], (value["height"], value["width"]))
+            resolutions[float(key)] = (value["folder"], (value["resolution"][1], value["resolution"][0]))
         
         train_dataset = WDSSDataset(
             root_dir=train_dir,
@@ -290,30 +326,3 @@ class WDSSDataset(Dataset):
         )
 
         return train_dataset, val_dataset, test_dataset
-    
-class WDSSDataLoader(DataLoader):
-    """Override the default DataLoader as we need to pass upscale factor to the dataset
-    """
-    def __init__(
-        self,
-        dataset: WDSSDataset,
-        upscale_factors: List[float], # Upscale factors with their probabilities
-        batch_size: int = 1,
-        shuffle: bool = False,
-        num_workers: int = 0,
-        *args,
-        **kwargs
-    ):
-        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, *args, **kwargs)
-        self.upscale_factors = upscale_factors
-
-    def __iter__(self):
-        # Select a random upscale factor for each batch
-        upscale_factor = self._select_random_upscale_factor()
-        self.dataset.__getitem__ = lambda idx: self.dataset.get_item(idx, upscale_factor, no_patch=False)
-        return super().__iter__()
-    
-    def _select_random_upscale_factor(self) -> float:
-        """Select a random upscale factor
-        """
-        return self.upscale_factors[randint(0, len(self.upscale_factors) - 1)]

@@ -13,6 +13,7 @@ from utils.wavelet import WaveletProcessor
 from config import device, Settings
 import json
 from utils.image_utils import ImageUtils
+from .image_evaluator import exp_norm, reinhard_norm
 
 from typing import Dict, Tuple, Any, Optional
 
@@ -43,19 +44,13 @@ class Trainer:
         self.logger = NetworkLogger(settings.log_path())
         self.best_val_loss = float('inf')
 
-        self.train_loader = WDSSDataLoader(
+        self.train_loader = DataLoader(
             self.train_dataset,
-            upscale_factors=[
-                float(key) for key in settings.dataset_config["resolutions"].keys() if float(key) != 1.0
-            ],
             batch_size=self.settings['batch_size'],
             shuffle=True
         )
-        self.val_loader = WDSSDataLoader(
+        self.val_loader = DataLoader(
             self.val_dataset,
-            upscale_factors=[
-                float(key) for key in settings.dataset_config["resolutions"].keys() if float(key) != 1.0
-            ],
             batch_size=self.settings['batch_size'],
             shuffle=False
         )
@@ -63,6 +58,8 @@ class Trainer:
     def train(self, epochs: int = 1, no_log_gt: bool = False) -> None:
         """Train the model for a specified number of epochs.
         """
+        
+        self.settings.save_config()
 
         if self.total_epochs == 0 and not no_log_gt:
             self.log_gt_images()
@@ -223,6 +220,8 @@ class Trainer:
                 args=(batch,)
             )
 
+            self.train_dataset.set_random_upscale_factor()
+
         # Wait for the last batch to finish
         loss, metrics = async_result.get()
         total_loss += loss
@@ -291,6 +290,8 @@ class Trainer:
                 args=(batch,)
             )
 
+            self.val_dataset.set_random_upscale_factor()
+
         # Wait for the last batch to finish
         loss, metrics = async_result.get()
         total_loss += loss if loss is not None else 0.0
@@ -358,11 +359,18 @@ class Trainer:
                 if 'Wavelet' in key:
                     img = ImageUtils.stack_wavelet(img)
 
-                self.log_image(
-                    img.detach().cpu(),
-                    f'{key}/{index}/{upscale_factor:.1f}x',
-                    None
-                )
+                if 'HR' in key:
+                    self.log_image(
+                        img.detach().cpu(),
+                        f'{key}/{index}',
+                        None
+                    )
+                else:
+                    self.log_image(
+                        img.detach().cpu(),
+                        f'{key}/{index}/{upscale_factor:.1f}x',
+                        None
+                    )
 
     # @wrap_try
     def log_test_frames(self) -> None:
@@ -370,7 +378,7 @@ class Trainer:
         """
 
         for index, upscale_factor in self.settings.test_images_idx:
-            frame = self.inference(index, upscale_factor)
+            frame = self._inference_for_logging(index, upscale_factor)
 
             for key in frame:
                 img = frame[key]
@@ -412,6 +420,13 @@ class Trainer:
         res['PredReconstructed'] = out
 
         return res
+    
+    def _inference_for_logging(self, index: int, upscale_factor: float) -> Dict[str, torch.Tensor]:
+        infered = self.inference(index, upscale_factor)
+        infered['Pred'] = exp_norm(infered['Pred'])
+        infered['PredWavelet'] = exp_norm(infered['PredWavelet'].clamp(0.0, None))
+        infered['PredReconstructed'] = exp_norm(infered['PredReconstructed'])
+        return infered
 
     def log_losses(self, train_loss: float, val_loss: float, train_metrics: Dict[str, float], val_metrics: Dict[str, float], step: int | None = None) -> None:
         """Log the training and validation losses and metrics to the TensorBoard.

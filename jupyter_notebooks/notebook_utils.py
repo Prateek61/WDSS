@@ -26,7 +26,7 @@ from typing import List, Dict, Tuple, Any, Union
 from config import device, Settings
 from commons import initialize
 from utils.image_utils import ImageUtils
-from network.dataset import WDSSDataset, GB_TYPE, RawFrameGroup, FrameGroup
+from network.dataset import WDSSDataset, GB_TYPE, RawFrameGroup, FrameGroup, ZipUtils
 from utils.masks import Mask
 from utils.preprocessor import Preprocessor
 from network.image_evaluator import ImageEvaluator
@@ -34,6 +34,8 @@ from network.trainer import Trainer
 from network.models.GetModel import get_model
 from utils.wavelet import WaveletProcessor
 from network.losses import *
+
+from tqdm import tqdm
 
 def initialize_settings(config_path: str = "config/config.json", out_dir_in_config_path: bool = False, create_paths: bool = True) -> Settings:
     """

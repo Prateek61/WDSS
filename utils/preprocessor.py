@@ -78,19 +78,19 @@ class Preprocessor:
         res['HR'] = self.exponential_normalizer.normalize(preprocessed_frame[FrameGroup.GT.value])
         res['LR'] = self.exponential_normalizer.normalize(preprocessed_frame[FrameGroup.LR_INP.value])
 
-        res['HRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.batch_wt(res['HR'].unsqueeze(0).to(device)).squeeze(0)).to(device='cpu')
-        res['LRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.batch_wt(res['LR'].unsqueeze(0).to(device)).squeeze(0)).to(device='cpu')
+        res['HRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.batch_wt(preprocessed_frame[FrameGroup.GT.value].unsqueeze(0)).squeeze(0).clamp(0.0, None)).to(device='cpu')
+        res['LRWavelet'] = self.exponential_normalizer.normalize(WaveletProcessor.batch_wt(preprocessed_frame[FrameGroup.LR_INP.value].unsqueeze(0)).squeeze(0).clamp(0.0, None)).to(device='cpu')
 
         if self.reconstruction_frame_type == ReconstructionFrameType.IRRIDIANCE:
             res['HRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(preprocessed_frame[FrameGroup.GT.value], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF']))
             res['LRRemodulated'] = self.exponential_normalizer.normalize(BRDFProcessor.brdf_remodulate(preprocessed_frame[FrameGroup.LR_INP.value], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF_LR']))
 
         if self.reconstruction_frame_type == ReconstructionFrameType.IRRIDIANCE:
-            res['HRTonemapped'] = self.tonemap(res['HRRemodulated'])
-            res['LRTonemapped'] = self.tonemap(res['LRRemodulated'])
+            res['HRTonemapped'] = self.tonemap(BRDFProcessor.brdf_remodulate(preprocessed_frame[FrameGroup.GT.value], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF']))
+            res['LRTonemapped'] = self.tonemap(BRDFProcessor.brdf_remodulate(preprocessed_frame[FrameGroup.LR_INP.value], preprocessed_frame[FrameGroup.EXTRA.value]['BRDF_LR']))
         else:
-            res['HRTonemapped'] = self.tonemap(res['HR'])
-            res['LRTonemapped'] = self.tonemap(res['LR'])
+            res['HRTonemapped'] = self.tonemap(preprocessed_frame[FrameGroup.GT.value])
+            res['LRTonemapped'] = self.tonemap(preprocessed_frame[FrameGroup.LR_INP.value])
 
         return res
 
