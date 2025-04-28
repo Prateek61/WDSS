@@ -4,6 +4,7 @@ from torch import nn
 from utils.pytorch_ssim import ssim, SSIM
 from config import device
 from .image_evaluator import exp_norm, reinhard_norm
+from lpips import LPIPS
 
 from typing import List, Dict, Tuple, Optional
 
@@ -61,3 +62,71 @@ class CriterionSimple(CriterionBase):
             "image_l1": loss_image,
             "wavelet_l1": loss_wavelet
         }
+
+
+class Criterion_Combined(CriterionBase):
+    def __init__(self, weights: Dict[str, float] = {
+        "l1": 0.25,
+        "ssim": 0.2,
+        "l1_wave": 0.25,
+        "ssim_reconstructed": 0.2,
+        "l1_reconstructed": 0.6,
+        "lpips_reconstructed": 0.15
+    }):
+        super(Criterion_Combined, self).__init__()
+        self.lpips = LPIPS(net='alex')
+        self.l1 = L1Norm()
+        self.ssim = SSIM()
+
+        self.weights = weights
+
+    def forward(self, prediction_wavelet: torch.Tensor, 
+                target_wavelet: torch.Tensor, 
+                pred: torch.Tensor, 
+                target: torch.Tensor,
+                extra : Dict[str, torch.Tensor] = {}
+                ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        losses: Dict[str, torch.Tensor] = {}
+
+        # First compute all the losses for prediction and target image
+        l1_loss = self.l1.forward(pred, target)
+            
+        # Compute the L1 loss for the wavelet coefficients
+        l1_wave = self.l1.forward(prediction_wavelet, target_wavelet)
+
+        wave_min = torch.min(target_wavelet.min(), prediction_wavelet.min())
+        target_wavelet = target_wavelet - wave_min
+        prediction_wavelet = prediction_wavelet - wave_min
+
+        # prediction_image = reinhard_norm(prediction_image)
+        # target_image = reinhard_norm(target_image)
+
+        ssim_loss = 1 - self.ssim.forward(pred, target)
+
+        ssim_reconstructed = 1 - self.ssim.forward(extra['img_processed'], extra['hr_processed'])
+        l1_reconstructed = self.l1.forward(extra['img_processed'], extra['hr_processed'])
+        lpips_reconstructed = self.lpips(extra['img_processed']*2 -1, extra['hr_processed']*2 -1).mean()
+
+        # Compute the total loss
+        total_loss = self.weights['l1'] * l1_loss + self.weights['ssim'] * ssim_loss + self.weights['l1_wave'] * l1_wave + self.weights['ssim_reconstructed'] * ssim_reconstructed + self.weights['l1_reconstructed'] * l1_reconstructed + self.weights['lpips_reconstructed'] * lpips_reconstructed
+
+        # Add all the losses to the dictionary
+        losses['l1_image'] = l1_loss
+        losses['ssim_image'] = ssim_loss
+        losses['lpips_reconstructed'] = lpips_reconstructed
+        losses['l1_reconstructed'] = l1_reconstructed
+        losses['ssim_reconstructed'] = ssim_reconstructed
+        losses['l1_wavelets'] = l1_wave
+
+        if total_loss == float('nan'):
+            # Print all the losses
+            print(f"L1 Loss Image: {l1_loss}")
+            print(f"SSIM Loss Image: {ssim_loss}")
+            print(f"L1 Loss Wavelet: {l1_wave}")
+            print(f"L1 Loss Reconstructed: {l1_reconstructed}")
+            print(f"SSIM Loss Reconstructed: {ssim_reconstructed}")
+            print(f"LPIPS Loss Reconstructed: {lpips_reconstructed}")
+            print(f"Total Loss: {total_loss}")
+            total_loss = torch.tensor(0.0)
+
+        return total_loss , losses
