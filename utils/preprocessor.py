@@ -67,6 +67,16 @@ class Preprocessor:
 
         return frame
     
+    def postprocess_lr(
+        self,
+        lr_frame: torch.Tensor,
+        extra: Dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        if self.reconstruction_frame_type == ReconstructionFrameType.IRRIDIANCE:
+            lr_frame = BRDFProcessor.brdf_remodulate(lr_frame, extra['BRDF_LR'])
+
+        return lr_frame
+    
     # For logging to tensorboard
     def get_log(self,
         raw_frames: Dict[RawFrameGroup, Dict[GB_TYPE, torch.Tensor]],

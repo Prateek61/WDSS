@@ -28,6 +28,8 @@ def reinhard_norm(x: torch.Tensor) -> torch.Tensor:
 
 
 class ImageEvaluator(nn.Module):
+    evaluation_metrics: List[str] = ['ssim', 'psnr', 'lpips']
+
     """
     Class to evaluate image quality using various metrics.
     """
@@ -43,6 +45,7 @@ class ImageEvaluator(nn.Module):
         """
         if ImageEvaluator.lpips_model is None or ImageEvaluator._lpips_device != lpips_device:
             ImageEvaluator.lpips_model = LPIPS(net='vgg').to(lpips_device)
+            ImageEvaluator.lpips_model.eval()
             ImageEvaluator._lpips_device = lpips_device
 
     @staticmethod
@@ -120,3 +123,21 @@ class ImageEvaluator(nn.Module):
             torch.Tensor: L1 loss value.
         """
         return torch.nn.functional.l1_loss(img1, img2)
+    
+    @staticmethod
+    def evaluate(input: torch.Tensor, target: torch.Tensor) -> Dict[str, float]:
+        """
+        Evaluate the input image against the target image using various metrics.
+        Args:
+            input (torch.Tensor): Input image tensor.
+            target (torch.Tensor): Target image tensor.
+        Returns:
+            Dict[str, torch.Tensor]: Dictionary containing evaluation metrics.
+        """
+        metrics = {
+            'ssim': ImageEvaluator.ssim(input, target).item(),
+            'psnr': ImageEvaluator.psnr(input, target, max_val=1.0).item(),
+            'lpips': ImageEvaluator.lpips(input, target).item()
+        }
+        return metrics
+    

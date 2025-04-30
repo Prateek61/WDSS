@@ -34,6 +34,7 @@ from network.trainer import Trainer
 from network.models.GetModel import get_model
 from utils.wavelet import WaveletProcessor
 from network.losses import *
+from network.model_evaluator import *
 
 from tqdm import tqdm
 

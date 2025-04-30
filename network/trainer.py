@@ -8,12 +8,13 @@ from .model_utils import ModelUtils
 from .losses import CriterionBase
 from .models.ModelBase import ModelBase
 from .dataset import *
+from utils.brdf import BRDFProcessor
 from utils.wdss_logger import NetworkLogger
 from utils.wavelet import WaveletProcessor
 from config import device, Settings
 import json
 from utils.image_utils import ImageUtils
-from .image_evaluator import exp_norm, reinhard_norm
+from .image_evaluator import exp_norm, reinhard_norm, ImageEvaluator
 
 from typing import Dict, Tuple, Any, Optional
 
@@ -210,8 +211,8 @@ class Trainer:
 
                 # Update the progress bar
                 progress_bar.update(1)
-                progress_bar.set_postfix(loss=total_loss / (i + 1), **{
-                    k: v / (i + 1) for k, v in total_metrics.items()
+                progress_bar.set_postfix(loss=total_loss / (i), **{
+                    k: v / (i) for k, v in total_metrics.items()
                 })
 
             # Start the next batch
@@ -280,8 +281,8 @@ class Trainer:
 
                 # Update the progress bar
                 progress_bar.update(1)
-                progress_bar.set_postfix(loss=total_loss / (i + 1), **{
-                    k: v / (i + 1) for k, v in total_metrics.items()
+                progress_bar.set_postfix(loss=total_loss / (i), **{
+                    k: v / (i) for k, v in total_metrics.items()
                 })
 
             # Start the next batch
@@ -427,6 +428,85 @@ class Trainer:
         infered['PredWavelet'] = exp_norm(infered['PredWavelet'].clamp(0.0, None))
         infered['PredReconstructed'] = exp_norm(infered['PredReconstructed'])
         return infered
+
+    
+    def evaluate_single(self, index: int, upscale_factor: float = 2.0, dataset: WDSSDataset | None = None, evaluate_model: bool = True, evaluate_bilinear: bool = False, evaluate_bilinear_demod: bool = False, no_patch: bool = True) -> Tuple[Dict[str, float] | None, Dict[str, float] | None, Dict[str, float] | None]:
+        """Compute the metrics for a single image.
+
+        Args:
+            index (int): Index of the image to evaluate.
+            upscale_factor (float): Upscale factor.
+            dataset (WDSSDataset | None): Dataset to use for evaluation. If None, use the test dataset.
+            evaluate_model (bool): Whether to evaluate the model.
+            evaluate_bilinear (bool): Whether to evaluate the bilinear interpolation.
+            evaluate_bilinear_demod (bool): Whether to evaluate the bilinear demodulation.
+            no_patch (bool): Whether to use the full image or a patch.
+
+
+        Returns:
+            Evaluation results for the model, bilinear interpolation, and bilinear interpolation of demodulated image.
+        """
+        import time
+
+        if dataset is None:
+            dataset = self.test_dataset
+
+        model_result: None | Dict[str, float] = None
+        bilinear_result: None | Dict[str, float] = None
+        bilinear_demod_result: None | Dict[str, float] = None
+
+        frame = dataset.get_item(index, upscale_factor, no_patch)
+        frame = WDSSDataset.batch_to_device(frame, device)
+        frame = WDSSDataset.unsqueeze_batch(frame)
+
+        lr_inp = frame[FrameGroup.LR_INP.value]
+        gb_inp = frame[FrameGroup.GB_INP.value]
+        temporal_inp = frame[FrameGroup.TEMPORAL_INP.value]
+        hr_gt = frame[FrameGroup.GT.value]
+
+        upscale_factor = hr_gt.shape[-2] / lr_inp.shape[-2]
+        
+        gt_remod = dataset.preprocessor.postprocess(
+            hr_gt,
+            extra=frame[FrameGroup.EXTRA.value]
+        )
+        gt_tonemapped = dataset.preprocessor.tonemap(gt_remod)
+
+        if evaluate_model:
+            self.model.eval()
+            with torch.no_grad():
+                _, img = self.model.forward(lr_inp, gb_inp, temporal_inp, upscale_factor)
+
+            remod = dataset.preprocessor.postprocess(
+                img,
+                extra=frame[FrameGroup.EXTRA.value]
+            )
+            tonemapped = dataset.preprocessor.tonemap(remod)
+            model_result = ImageEvaluator.evaluate(tonemapped, gt_tonemapped)
+
+        if evaluate_bilinear:
+            try:
+                bilinear_inp = BRDFProcessor.brdf_remodulate(lr_inp, frame[FrameGroup.EXTRA.value]['BRDF_LR'])
+            except:
+                bilinear_inp = lr_inp
+            bilinear = ImageUtils.upsample(bilinear_inp, upscale_factor)
+            bilinear = dataset.preprocessor.tonemap(bilinear)
+
+            bilinear_result = ImageEvaluator.evaluate(bilinear, gt_tonemapped)
+
+        if evaluate_bilinear_demod:
+            bilinear = ImageUtils.upsample(lr_inp, upscale_factor)
+            bilinear = dataset.preprocessor.postprocess(bilinear, extra=frame[FrameGroup.EXTRA.value])
+            bilinear = dataset.preprocessor.tonemap(bilinear)
+
+            bilinear_demod_result = ImageEvaluator.evaluate(bilinear, gt_tonemapped)
+
+        return model_result, bilinear_result, bilinear_demod_result
+    
+    def evaluate(self, range: Tuple[int, int] | None = None, upscale_factors: List[float] | None = None, dataset: WDSSDataset | None = None, evaluate_model: bool = True, evaluate_bilinear: bool = False, evaluate_bilinear_demod: bool = False, 
+        print_results: bool = True, log_file: str = "", divide_zips: bool = True, store_individual: bool = False
+    ) -> Tuple[Dict[float, Tuple[Dict[str, float] | None, Dict[str, float] | None, Dict[str, float] | None]], Dict[float, List[Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]]] | None]:
+        ...
 
     def log_losses(self, train_loss: float, val_loss: float, train_metrics: Dict[str, float], val_metrics: Dict[str, float], step: int | None = None) -> None:
         """Log the training and validation losses and metrics to the TensorBoard.

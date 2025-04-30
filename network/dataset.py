@@ -12,6 +12,7 @@ from utils.patch import Patch
 from config import Settings
 from .commons import wrap_try, GB_TYPE, RawFrameGroup, FrameGroup
 from utils.preprocessor import Preprocessor
+from config import device
 
 from typing import Dict, List, Tuple
 
@@ -245,7 +246,7 @@ class WDSSDataset(Dataset):
     @staticmethod
     def batch_to_device(
         batch: Dict[str, torch.Tensor | Dict[str, torch.Tensor]],
-        device: torch.device
+        device: torch.device = device
     ):
         """Move the batch to the device
         """
