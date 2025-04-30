@@ -22,23 +22,19 @@
         "resolutions": {
             "1": {
                 "folder": "1080P",
-                "width": 1920,
-                "height": 1080
+                "resolution": [1920, 1080]
             },
             "2": {
                 "folder": "540P",
-                "width": 960,
-                "height": 540
+                "resolution": [960, 540]
             },
             "3": {
                 "folder": "360P",
-                "width": 640,
-                "height": 360
+                "resolution": [640, 360]
             },
             "4": {
                 "folder": "270P",
-                "width": 480,
-                "height": 270
+                "resolution": [480, 270]
             }
         }
     },
