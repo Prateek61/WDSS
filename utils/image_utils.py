@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 from torchvision.transforms import ToPILImage, ToTensor
 from PIL import Image
 import cv2
+import OpenEXR
+import Imath
+import io
+import tempfile
 
 from typing import List
 
@@ -141,6 +145,101 @@ class ImageUtils:
         cv2.imwrite(image_path, image)
 
     @staticmethod
+    def _map_imath_pixel_types(
+        type: Imath.PixelType
+    ) -> np.dtype:
+        """
+        Map Imath.PixelType to numpy dtype.
+
+        Args:
+            type (Imath.PixelType): Imath pixel type.
+
+        Returns:
+            np.dtype: Corresponding numpy dtype.
+        """
+        if Imath.PixelType(type) == Imath.PixelType(Imath.PixelType.HALF):
+            return np.float16
+        elif Imath.PixelType(type) == Imath.PixelType(Imath.PixelType.FLOAT):
+            return np.float32
+        else:
+            raise ValueError(f"Unsupported PixelType: {type}. Supported types are: [HALF, FLOAT].")
+
+    @staticmethod
+    def save_exr_image_openexr(
+        image: np.ndarray,
+        image_path: str,
+        precisions: List[Imath.PixelType] = None,
+        compression: bool = False
+    ) -> None:
+        """
+        Save a 4-channel image as an .exr file using OpenEXR 3.3+ File API.
+
+        Args:
+            image (np.ndarray): Input image of shape (H, W, 4).
+            image_path (str): Path to save the .exr image.
+            precisions (List[Imath.PixelType], optional): List of 4 Imath.PixelType values for each channel.
+                                                        Defaults to [HALF, HALF, HALF, HALF].
+        """
+        h, w, c = image.shape
+        assert c == 4, "Image must have 4 channels (e.g., RGBA)."
+
+        if precisions is None:
+            precisions = [Imath.PixelType.HALF] * 4
+        assert len(precisions) == 4, "Must provide precision for each of the 4 channels."
+
+        channel_names = ['R', 'G', 'B', 'A']
+
+        # Prepare image channels (convert based on PixelType)
+        channels = {}
+        for i, name in enumerate(channel_names):
+            pixel_type = precisions[i] 
+            dtype = ImageUtils._map_imath_pixel_types(pixel_type)
+            channels[name] = image[:, :, i].astype(dtype)
+
+        # Build EXR header
+        header = {
+            "compression": OpenEXR.ZIP_COMPRESSION if compression else OpenEXR.NO_COMPRESSION,
+            "type" : OpenEXR.scanlineimage,
+        }
+
+        # Write using the new OpenEXR.File API
+        with OpenEXR.File(header, channels) as exr_file:
+            exr_file.write(image_path)
+
+    @staticmethod
+    def decode_exr_image_openexr(file_buffer: bytes) -> np.ndarray:
+        """Decode an EXR image using OpenEXR.
+
+        Args:
+            file_buffer (bytes): Buffer containing the EXR image data.
+
+        Returns:
+            np.ndarray: Decoded image. Shape (H, W, 4).
+        """
+
+        # Create a temporary file to store the EXR data
+        with tempfile.NamedTemporaryFile(delete=True) as temp_file:
+            # Write the EXR data to the temporary file
+            temp_file.write(file_buffer)
+            temp_file.flush()
+
+            return ImageUtils.load_exr_image_openexr(temp_file.name)
+
+
+    def load_exr_image_openexr(file_path: str) -> np.ndarray:
+        """Load an EXR image using OpenEXR.
+
+        Args:
+            file_path (str): Path to the EXR image.
+
+        Returns:
+            np.ndarray: Loaded image. Shape (H, W, 4).
+        """
+
+        with OpenEXR.File(file_path) as exr_file:
+            return exr_file.channels()["RGBA"].pixels
+
+    @staticmethod
     def decode_exr_image_opencv(file_buffer: bytes) -> np.ndarray:
         # Decode the EXR image using OpenCV
         image = cv2.imdecode(np.frombuffer(file_buffer, np.uint8), cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH)
@@ -223,63 +322,6 @@ class ImageUtils:
             axes[i].set_title(title)
             axes[i].axis('off')
         plt.show()
-
-    @staticmethod
-    def tone_map(image: torch.Tensor, gamma: float = 2.2) -> torch.Tensor:
-        """Apply gamma correction to the input image tensor.
-
-        Returns:
-            torch.Tensor: Tone-mapped image tensor.
-        """
-
-        # Apply gamma correction
-        image = image ** (1.0 / gamma)
-        return image.clamp(0, 1)
-    
-    @staticmethod
-    def tone_de_map(image: torch.Tensor, gamma: float = 2.2) -> torch.Tensor:
-        """Apply gamma correction to the input image tensor.
-
-        Returns:
-            torch.Tensor: Tone-mapped image tensor.
-        """
-
-        # Apply gamma correction
-        image = image ** gamma
-        return image.clamp(0, 1)
-    
-    @staticmethod
-    def aces_tonemap(image: torch.Tensor, gain: float = 1.4) -> torch.Tensor:
-        A = 2.51
-        B = 0.03
-        C = 2.43
-        D = 0.59
-        E = 0.14
-
-        pre_tonemapping_transform = torch.Tensor([
-            [0.575961650,  0.344143820,  0.079952030],
-            [0.070806820,  0.827392350,  0.101774690],
-            [0.028035252,  0.131523770,  0.840242300]
-        ])
-
-        post_tonemapping_transform = torch.Tensor([
-            [1.666954300, -0.601741150, -0.065202855],
-            [-0.106835220,  1.237778600, -0.130948950],
-            [-0.004142626, -0.087411870,  1.091555000]
-        ])
-
-        exposed_pretonemapped_transform = gain * pre_tonemapping_transform
-        
-        # Move channels to the last
-        image = image.permute(0, 2, 3, 1)
-
-        image = image @ exposed_pretonemapped_transform.T
-
-        image = (image * (A * image + B)) / (image * (C * image + D) + E).clamp(min=0.0, max=1.0)
-
-        image = image @ post_tonemapping_transform.T
-
-        return image.permute(0, 3, 1, 2).clamp(min=0.0, max=1.0)
     
     @staticmethod
     def save_tensor(image: torch.Tensor, path: str) -> None:
@@ -325,41 +367,3 @@ class ImageUtils:
             wavelet_img = wavelet_img.squeeze(0)
 
         return wavelet_img
-
-    @staticmethod
-    def aces_tonemap_fast(image: torch.Tensor, gain: float = 1.0) -> torch.Tensor:
-        A = 2.51
-        B = 0.03
-        C = 2.43
-        D = 0.59
-        E = 0.14
-
-        image = image * gain
-
-        image = (image * (A * image + B)) / (image * (C * image + D) + E)
-
-        return image.clamp(0.0, 1.0)
-
-
-    @staticmethod 
-    def _hable_tonemap_core(x: torch.Tensor) -> torch.Tensor:
-        hA = 0.15
-        hB = 0.50
-        hC = 0.10
-        hD = 0.20
-        hE = 0.02
-        hF = 0.30
-
-        return ((x * (hA * x + hC * hB) + hD * hE) / (x * (hA * x + hB) + hD * hF)) - (hE / hF)
-    
-    @staticmethod
-    def hable_tonemap(x: torch.Tensor) -> torch.Tensor:
-        x = ImageUtils._hable_tonemap_core(x)
-        hw = torch.as_tensor(11.2)
-        white_scale = 1.0 / ImageUtils._hable_tonemap_core(hw)
-        x = x * white_scale
-        return x.clamp(0.0, 1.0)
-    
-    @staticmethod
-    def tonemap(image: torch.Tensor) -> torch.Tensor:
-        return ImageUtils.aces_tonemap_fast(image, gain=1.6)

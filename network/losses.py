@@ -143,7 +143,7 @@ class CriterionOld(CriterionBase):
     ):
         super(CriterionOld, self).__init__("Combined")
         self.lpips_model = LPIPS(net='alex')
-        self.lpips_model.eval()
+        # self.lpips_model.eval()
         self.l1_loss = L1Norm()
         self.ssim_loss = SSIM()
         self.preprocessor = preprocessor

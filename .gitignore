@@ -28,3 +28,4 @@ testin.py
 # Old files
 **.old**
 **test.ipynb
+**.local**
