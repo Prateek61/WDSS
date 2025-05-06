@@ -198,7 +198,7 @@ class ImageUtils:
 
         # Build EXR header
         header = {
-            "compression": OpenEXR.ZIP_COMPRESSION if compression else OpenEXR.NO_COMPRESSION,
+            "compression": OpenEXR.PIZ_COMPRESSION if compression else OpenEXR.NO_COMPRESSION,
             "type" : OpenEXR.scanlineimage,
         }
 

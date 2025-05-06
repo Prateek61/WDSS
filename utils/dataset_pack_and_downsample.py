@@ -26,12 +26,14 @@ class RawGBuffer(Enum):
     DEPTH = "FinalImageSceneDepth"
     SPECULAR = "FinalImageSpecular"
     NORMAL = "FinalImageWorldNormal"
+    NoV = "FinalImageNoV"
 
 class Config:
     GBufferPackedClass = GBufferPacked
     RawGBufferClass = RawGBuffer
     Delete = True
-    Scale_MV = 1.0
+    Scale_Metallic = 0.5
+    Scale_Specular = 0.5
     TargetSizes = [
         ("1080P", (1920, 1080)),
         ("540P", (960, 540)),
@@ -63,6 +65,9 @@ class Pack:
         normal = FileUtils.load(path, Config.RawGBufferClass.NORMAL.value, frame_no)[:, :, :3]
         specular = FileUtils.load(path, Config.RawGBufferClass.SPECULAR.value, frame_no)[:, :, :1]
 
+        if Config.Scale_Specular != 1.0:
+            specular = specular * Config.Scale_Specular
+
         packed = np.concatenate((normal, specular), axis=2)
         FileUtils.save(path, Config.GBufferPackedClass.NORMAL_SPECULAR.value, frame_no, packed,
             precisions=[Imath.PixelType.FLOAT, Imath.PixelType.FLOAT, Imath.PixelType.HALF, Imath.PixelType.HALF]          
@@ -93,6 +98,9 @@ class Pack:
         pre_tonemap = FileUtils.load(path, Config.RawGBufferClass.PRE_TONEMAP.value, frame_no)[:, :, :3]
         metallic = FileUtils.load(path, Config.RawGBufferClass.METALLIC.value, frame_no)[:, :, :1]
 
+        if Config.Scale_Metallic != 1.0:
+            metallic = metallic * Config.Scale_Metallic
+
         packed = np.concatenate((pre_tonemap, metallic), axis=2)
         FileUtils.save(path, 
             Config.GBufferPackedClass.PRETONEMAP_METALLIC.value, 
@@ -106,16 +114,24 @@ class Pack:
             os.remove(FileUtils.get_full_path(path, Config.RawGBufferClass.METALLIC.value, frame_no))
 
     @staticmethod
-    def pack_mv_roughness(path: str, frame_no: int):
+    def _process_mv(mv: np.ndarray) -> np.ndarray:
+        h, w, _ = mv.shape
+        mv = (mv - 0.5) * 2.0
+        mv[:, :, 0] = mv[:, :, 0] * float(w)
+        mv[:, :, 1] = mv[:, :, 1] * float(h)
+        return mv
+
+    @staticmethod
+    def pack_mv_roughness_nov(path: str, frame_no: int):
         mv = FileUtils.load(path, Config.RawGBufferClass.MOTION_VECTOR.value, frame_no)[:, :, :2]
-        roughness = FileUtils.load(path, Config.RawGBufferClass.ROUGHNESS.value, frame_no)[:, :, :2]
+        roughness = FileUtils.load(path, Config.RawGBufferClass.ROUGHNESS.value, frame_no)[:, :, :1]
+        nov = FileUtils.load(path, Config.RawGBufferClass.NoV.value, frame_no)[:, :, :1]
 
-        if Config.Scale_MV != 1.0:
-            mv = mv * Config.Scale_MV
+        mv = Pack._process_mv(mv)
 
-        packed = np.concatenate((mv, roughness), axis=2)
+        packed = np.concatenate((mv, roughness, nov), axis=2)
         FileUtils.save(path, GBufferPacked.MV_ROUGHNESS_NOV.value, frame_no, packed,
-            precisions=[Imath.PixelType.FLOAT, Imath.PixelType.FLOAT, Imath.PixelType.HALF, Imath.PixelType.HALF]
+            precisions=[Imath.PixelType.FLOAT, Imath.PixelType.FLOAT, Imath.PixelType.HALF, Imath.PixelType.FLOAT]
         )
 
         if Config.Delete:
@@ -127,7 +143,7 @@ class Pack:
         Pack.pack_normal_specular(path, frame_no)
         Pack.pack_base_color_depth(path, frame_no)
         Pack.pack_pre_tonemap_metallic(path, frame_no)
-        Pack.pack_mv_roughness(path, frame_no)
+        Pack.pack_mv_roughness_nov(path, frame_no)
 
     @staticmethod
     def pack_all(path: str, frame_range: Tuple[int, int]) -> None:

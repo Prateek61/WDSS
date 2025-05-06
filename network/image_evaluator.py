@@ -44,7 +44,7 @@ class ImageEvaluator(nn.Module):
             lpips_device (torch.device): Device to run the LPIPS model on.
         """
         if ImageEvaluator.lpips_model is None or ImageEvaluator._lpips_device != lpips_device:
-            ImageEvaluator.lpips_model = LPIPS(net='vgg').to(lpips_device)
+            ImageEvaluator.lpips_model = LPIPS(net='alex').to(lpips_device)
             ImageEvaluator.lpips_model.eval()
             ImageEvaluator._lpips_device = lpips_device
 
