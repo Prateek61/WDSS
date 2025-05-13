@@ -25,9 +25,11 @@ class Settings:
         self.test_images_idx: List[Tuple[int, float]] = settings["test_images_idx"]
         self.model_save_interval: int = settings["model_save_interval"]
         self.image_log_interval: int = settings["image_log_interval"]
+        self.settings_dir_path: str = os.path.dirname(settings_path)
+        self.out_dir_in_config_path: bool = out_dir_in_config_path
 
     def get_full_path(self, folder: str) -> str:
-        return os.path.join(self.out_dir, f'{self.job_name}', folder)
+        return os.path.join(self.get_base_path(), folder)
     
     def model_path(self) -> str:
         return self.get_full_path(self.model_dir)
@@ -36,7 +38,10 @@ class Settings:
         return self.get_full_path(self.log_dir)
     
     def get_base_path(self) -> str:
-        return self.get_full_path('')
+        if not self.out_dir_in_config_path:
+            return os.path.join(self.out_dir, f'{self.job_name}')
+        else:
+            return self.settings_dir_path
     
     def save_config(self):
         with open(os.path.join(self.get_base_path(), 'config.json'), 'w') as f:

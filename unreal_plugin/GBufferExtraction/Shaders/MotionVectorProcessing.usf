@@ -1,0 +1,135 @@
+// From https://github.com/fuxihao66/ExtraNet/tree/main/EngineModificationGuide
+
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/TextureSampling.ush"
+#include "/Engine/Private/ScreenPass.ush"
+
+#define TILE_SIZE 8
+
+Texture2D SceneDepth;
+Texture2D SceneVelocity;
+
+SCREEN_PASS_TEXTURE_VIEWPORT(InputInfo)
+
+RWTexture2D<float4> OutDilatedVelocity;
+
+uint2 ZOrder2D(uint Index, const uint SizeLog2)
+{
+	uint2 Coord = 0; 
+
+	UNROLL
+	for (uint i = 0; i < SizeLog2; i++)
+	{
+		Coord.x |= ((Index >> (2 * i + 0)) & 0x1) << i;
+		Coord.y |= ((Index >> (2 * i + 1)) & 0x1) << i;
+	}
+
+	return Coord;
+}
+
+void FindClosestDepthOffset(Texture2D Texture, uint2 PixelPos, float DeviceZ, int PixelRadius, out float2 VelocityPixelOffset, out float ClosestDeviceZ)
+{
+	float4 Depths;
+	Depths.x = Texture[int2(PixelPos) + int2(-PixelRadius, -PixelRadius)].r;
+	Depths.y = Texture[int2(PixelPos) + int2( PixelRadius, -PixelRadius)].r;
+	Depths.z = Texture[int2(PixelPos) + int2(-PixelRadius,  PixelRadius)].r;
+	Depths.w = Texture[int2(PixelPos) + int2( PixelRadius,  PixelRadius)].r;
+
+	float2 DepthOffset = float2(PixelRadius, PixelRadius);
+	float DepthOffsetXx = float(PixelRadius);
+	// Nearest depth is the largest depth (depth surface 0=far, 1=near).
+	if(Depths.x > Depths.y) 
+	{
+		DepthOffsetXx = -PixelRadius;
+	}
+	if(Depths.z > Depths.w) 
+	{
+		DepthOffset.x = -PixelRadius;
+	}
+	float DepthsXY = max(Depths.x, Depths.y);
+	float DepthsZW = max(Depths.z, Depths.w);
+	if (DepthsXY > DepthsZW) 
+	{
+		DepthOffset.y = -PixelRadius;
+		DepthOffset.x = DepthOffsetXx; 
+	}
+	float DepthsXYZW = max(DepthsXY, DepthsZW);
+	
+	ClosestDeviceZ = DeviceZ;
+	VelocityPixelOffset = 0.0;
+
+	// If the pixel is closer in neighborhood, take it.
+	FLATTEN
+	if(DepthsXYZW > DeviceZ)
+	{
+		VelocityPixelOffset = DepthOffset;
+		ClosestDeviceZ = DepthsXYZW;
+	}
+}
+
+float2 ComputeStaticVelocity(float2 ScreenPos, float DeviceZ)
+{
+	float3 PosN = float3(ScreenPos, DeviceZ);
+
+	float4 ThisClip = float4(PosN, 1);
+	float4 PrevClip = mul( ThisClip, View.ClipToPrevClip );
+	float2 PrevScreen = PrevClip.xy / PrevClip.w;
+	return PosN.xy - PrevScreen;
+}
+
+
+
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void MainCS(
+	uint2 GroupId : SV_GroupID,
+	uint GroupThreadIndex : SV_GroupIndex)
+{
+    uint2 DispatchThreadId = (
+		ZOrder2D(GroupThreadIndex, log2(TILE_SIZE)) +
+		GroupId * uint2(TILE_SIZE, TILE_SIZE));
+
+	uint2 InputPixelPos = min(DispatchThreadId.xy + InputInfo_ViewportMin, InputInfo_ViewportMax - 1);
+    bool bInsideViewport = all(InputPixelPos < InputInfo_ViewportMax);
+
+    float2 ViewportUV = float2(DispatchThreadId) * InputInfo_ViewportSizeInverse;
+	float2 ScreenPos = ViewportUVToScreenPos(ViewportUV);
+    // float2 ScreenPos = SvPositionToScreenPosition(float4(InputPixelPos.xy, 0, 1)).xy;
+
+	BRANCH
+    if (bInsideViewport)
+    {
+        float DeviceZ = SceneDepth[InputPixelPos].r;
+
+        float ClosestDeviceZ = DeviceZ;
+        float2 VelocityPixelOffset = float2(0.0, 0.0);
+        
+        
+        FindClosestDepthOffset(SceneDepth, InputPixelPos, DeviceZ, 1, /* out */ VelocityPixelOffset, /* out */ ClosestDeviceZ);
+
+        // Compute final screen vecocity.
+        float2 FinalScreenVelocity = SceneVelocity[uint2(InputPixelPos + VelocityPixelOffset)].xy;
+        // float2 ScreenPos = SvPositionToScreenPosition(float4(InputPixelPos.xy, 0, 1)).xy;
+        float2 PrevScreenPos = float2(0 ,0);
+        
+        if (all(FinalScreenVelocity.xy > 0))
+        {
+            FinalScreenVelocity = DecodeVelocityFromTexture(float4(FinalScreenVelocity, 0, 0));
+            //FinalScreenVelocity = float2(0.5, 0.5);
+        }
+        else
+        {
+            float3 PosN = float3(ScreenPos, ClosestDeviceZ);
+            float4 ThisClip = float4(PosN, 1);
+            float4 PrevClip = mul(ThisClip, View.ClipToPrevClip);
+            PrevScreenPos = PrevClip.xy / PrevClip.w;
+            
+	        FinalScreenVelocity = ScreenPos - PrevScreenPos;
+            //FinalScreenVelocity = float2(0.3, 0.7);
+        }
+
+        float2 OutVelocity = FinalScreenVelocity * 0.5 * View.ViewSizeAndInvSize.xy;
+		//float2 OutVelocity = FinalScreenVelocity;
+
+        OutDilatedVelocity[InputPixelPos].xyzw = float4(OutVelocity.xy, 0, 1);
+    }
+}

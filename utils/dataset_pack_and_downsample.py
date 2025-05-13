@@ -20,7 +20,8 @@ class GBufferPacked(Enum):
 class RawGBuffer(Enum):
     BASE_COLOR = "FinalImageBaseColor"
     METALLIC = "FinalImageMetallic"
-    MOTION_VECTOR = "FinalImageMovieRenderQueue_MotionVectors"
+    #MOTION_VECTOR = "FinalImageMovieRenderQueue_MotionVectors"
+    MOTION_VECTOR = "FinalImageMotionVector"
     PRE_TONEMAP = "FinalImagePreTonemapHDRColor"
     ROUGHNESS = "FinalImageRoughness"
     DEPTH = "FinalImageSceneDepth"
@@ -115,6 +116,7 @@ class Pack:
 
     @staticmethod
     def _process_mv(mv: np.ndarray) -> np.ndarray:
+        # Pixle space motion vector from unreal's velocity buffer
         h, w, _ = mv.shape
         mv = (mv - 0.5) * 2.0
         mv[:, :, 0] = mv[:, :, 0] * float(w)
@@ -127,7 +129,7 @@ class Pack:
         roughness = FileUtils.load(path, Config.RawGBufferClass.ROUGHNESS.value, frame_no)[:, :, :1]
         nov = FileUtils.load(path, Config.RawGBufferClass.NoV.value, frame_no)[:, :, :1]
 
-        mv = Pack._process_mv(mv)
+        #mv = Pack._process_mv(mv)
 
         packed = np.concatenate((mv, roughness, nov), axis=2)
         FileUtils.save(path, GBufferPacked.MV_ROUGHNESS_NOV.value, frame_no, packed,
