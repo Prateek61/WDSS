@@ -9,16 +9,18 @@ Only tested on **UE 4.27**. Compatibility with other versions is not guaranteed.
 
 ## Setup & Usage
 
-1. **Initialize the Plugin in Your Level**
+1. **Engine Settings**
+   - Enable `Output Velocities During Base Pass` in the **Project Settings** under **Engine > Rendering**.
+
+2. **Initialize the Plugin in Your Level**
    - Open your level blueprint.
    - On `BeginPlay`, call the `GBESetRenderTarget` node (under the **GBufferExtraction** category).
    - Pass in the included `RT_GBERenderTarget`.
    - Make sure to resize the `RT_GBERenderTarget` to match your desired render resolution.
 
-2. **Use the Provided Movie Render Queue Preset**
+3. **Use the Provided Movie Render Queue Preset**
    - Load the `GBEMoviePipelineConfig` preset (included with the plugin).
    - This preset is pre-configured to output G-Buffers (motion vector, normal, depth, roughness, etc.) correctly.
-
 ---
 
 ## Output Buffers

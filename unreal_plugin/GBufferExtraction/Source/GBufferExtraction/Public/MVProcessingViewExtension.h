@@ -7,10 +7,7 @@ class FMVProcessingSceneViewExtension : public FSceneViewExtensionBase
 public:
 	FMVProcessingSceneViewExtension(const FAutoRegister& AutoRegister);
 
-	virtual void SubscribeToPostProcessingPass(EPostProcessingPass Pass, FAfterPassCallbackDelegateArray& InOutPassCallbacks, bool bIsPassEnabled) override;
-
-private:
-	FScreenPassTexture AfterTonemapPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessMaterialInputs& Inputs);
+	virtual void PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs) override;
 
 public:
 	// Overrides of PureVirtuals

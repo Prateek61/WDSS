@@ -5,7 +5,6 @@
 
 #include "PostProcess/PostProcessing.h"
 #include "PostProcess/PostProcessMaterial.h"
-#include "PostProcess/PostProcessMaterial.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "SceneTextureParameters.h"
 
@@ -15,35 +14,22 @@ FMVProcessingSceneViewExtension::FMVProcessingSceneViewExtension(const FAutoRegi
 	UGBEFunctionLibrary::GBELogDebug("MVProcessingSceneViewExtension Constructor Called");
 }
 
-void FMVProcessingSceneViewExtension::SubscribeToPostProcessingPass(EPostProcessingPass Pass, FAfterPassCallbackDelegateArray& InOutPassCallbacks, bool bIsPassEnabled)
-{
-	if (Pass == EPostProcessingPass::Tonemap)
-	{
-		InOutPassCallbacks.Add(
-			FAfterPassCallbackDelegate::CreateRaw(
-				this,
-				&FMVProcessingSceneViewExtension::AfterTonemapPass
-			)
-		);
-	}
-}
-
-FScreenPassTexture FMVProcessingSceneViewExtension::AfterTonemapPass(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessMaterialInputs& Inputs)
+void FMVProcessingSceneViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessingInputs& Inputs)
 {
 	UTextureRenderTarget2D* RenderTarget = UGBEFunctionLibrary::GetRenderTarget();
 	if (!RenderTarget)
 	{
-		return Inputs.GetInput(EPostProcessMaterialInput::SceneColor);
+		return;
 	}
 	const FTextureRenderTargetResource* RenderTargetResource = RenderTarget->GetRenderTargetResource();
 	if (!RenderTargetResource)
 	{
-		return Inputs.GetInput(EPostProcessMaterialInput::SceneColor);
+		return;
 	}
 	const FTexture2DRHIRef& RenderTargetRHI = RenderTargetResource->GetRenderTargetTexture();
 	if (!RenderTargetRHI)
 	{
-		return Inputs.GetInput(EPostProcessMaterialInput::SceneColor);
+		return;
 	}
 	FRDGTextureRef RenderTargetTexture = GraphBuilder.RegisterExternalTexture(
 		CreateRenderTarget(RenderTargetRHI, TEXT("GBE_MVProcessingRenderTarget")),
@@ -51,12 +37,17 @@ FScreenPassTexture FMVProcessingSceneViewExtension::AfterTonemapPass(FRDGBuilder
 	);
 	if (!RenderTargetTexture)
 	{
-		return Inputs.GetInput(EPostProcessMaterialInput::SceneColor);
+		return;
 	}
 
 	// Depth and Velocity
-	FRDGTextureRef DepthTexture = Inputs.SceneTextures.SceneTextures->GetParameters()->SceneDepthTexture;
-	FRDGTextureRef VelocityTexture = Inputs.GetInput(EPostProcessMaterialInput::Velocity).Texture;
+	auto SceneTextures = Inputs.SceneTextures->GetParameters();
+	FRDGTextureRef DepthTexture = SceneTextures->SceneDepthTexture;
+	//FRDGTextureRef VelocityTexture = Inputs.GetInput(EPostProcessMaterialInput::Velocity).Texture;
+	FRDGTextureRef VelocityTexture = SceneTextures->GBufferVelocityTexture;
+
+	// Print the dimensions of velocity texture
+	UGBEFunctionLibrary::GBELogDebug(FString::Printf(TEXT("Velocity Texture Dimensions: %d x %d"), VelocityTexture->Desc.Extent.X, VelocityTexture->Desc.Extent.Y));
 
 	FRDGTextureRef DilatedVelocityTexture = AddMVProcessingPass(
 		GraphBuilder,
@@ -72,5 +63,5 @@ FScreenPassTexture FMVProcessingSceneViewExtension::AfterTonemapPass(FRDGBuilder
 		RenderTargetTexture
 	);
 
-	return Inputs.GetInput(EPostProcessMaterialInput::SceneColor);
+	return;
 }
