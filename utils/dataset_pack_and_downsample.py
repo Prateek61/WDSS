@@ -33,8 +33,8 @@ class Config:
     GBufferPackedClass = GBufferPacked
     RawGBufferClass = RawGBuffer
     Delete = True
-    Scale_Metallic = 0.5
-    Scale_Specular = 0.5
+    Scale_Metallic = 1.0
+    Scale_Specular = 1.0
     TargetSizes = [
         ("1080P", (1920, 1080)),
         ("540P", (960, 540)),
