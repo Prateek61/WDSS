@@ -336,8 +336,6 @@ class ModelEvaluator:
                 progress_bar.update(1)
                 progress_bar.set_postfix(**{
                     f"bilinear_{k}": v / (i + 1 - start) for k, v in average_metrics_bilinear.items()
-                }, **{
-                    f"bilinear_demod_{k}": v / (i + 1 - start) for k, v in average_metrics_bilinear_demod.items()
                 })
 
                 # If the current frame is the last frame of the zip file, save the metrics
@@ -352,11 +350,6 @@ class ModelEvaluator:
                     curr_zip_metrics_bilinear = {k: 0.0 for k in ImageEvaluator.evaluation_metrics}
                     curr_zip_metrics_bilinear_demod = {k: 0.0 for k in ImageEvaluator.evaluation_metrics}
 
-            average_metrics_bilinear = {k: v / total_frames for k, v in average_metrics_bilinear.items()}
-            average_metrics_bilinear_demod = {k: v / total_frames for k, v in average_metrics_bilinear_demod.items()}
-            average_metrics_bilinear = average_metrics_bilinear.copy()
-            average_metrics_bilinear_demod = average_metrics_bilinear_demod.copy()
-            # Calculate the average metrics for the bilinear interpolation
             average_metrics_bilinear = {k: v / total_frames for k, v in average_metrics_bilinear.items()}
             average_metrics_bilinear_demod = {k: v / total_frames for k, v in average_metrics_bilinear_demod.items()}
             # Add the metrics to the results

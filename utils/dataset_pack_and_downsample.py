@@ -97,6 +97,10 @@ class Pack:
     @staticmethod
     def pack_pre_tonemap_metallic(path: str, frame_no: int):
         pre_tonemap = FileUtils.load(path, Config.RawGBufferClass.PRE_TONEMAP.value, frame_no)[:, :, :3]
+
+        # Clamp to range [0, 64] for hdr images
+        pre_tonemap = np.clip(pre_tonemap, 0.0, 64.0)
+
         metallic = FileUtils.load(path, Config.RawGBufferClass.METALLIC.value, frame_no)[:, :, :1]
 
         if Config.Scale_Metallic != 1.0:
@@ -139,6 +143,7 @@ class Pack:
         if Config.Delete:
             os.remove(FileUtils.get_full_path(path, Config.RawGBufferClass.MOTION_VECTOR.value, frame_no))
             os.remove(FileUtils.get_full_path(path, Config.RawGBufferClass.ROUGHNESS.value, frame_no))
+            os.remove(FileUtils.get_full_path(path, Config.RawGBufferClass.NoV.value, frame_no))
 
     @staticmethod
     def pack_single_frame(path: str, frame_no: int):

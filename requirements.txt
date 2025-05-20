@@ -11,3 +11,4 @@ tqdm # for progress bars
 tensorboard # for logging
 pandas
 py-cpuinfo
+OpenEXR

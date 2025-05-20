@@ -35,6 +35,7 @@ from network.models.GetModel import get_model
 from utils.wavelet import WaveletProcessor
 from network.losses import *
 from network.model_evaluator import *
+from utils.brdf import BRDFProcessor
 
 from tqdm import tqdm
 
