@@ -171,6 +171,10 @@ class Downsample:
             iamge = FileUtils.load(source_path, gb_type.value, frame_no)
             for target_name, target_size in target_sizes:
                 downsampled_image = Downsample.downsample_image(iamge, target_size)
+
+                if gb_type == GBufferPacked.PRETONEMAP_METALLIC:
+                    downsampled_image[:, :, 0:3] = np.clip(downsampled_image[:, :, 0:3], 0.0, 64.0)
+
                 FileUtils.save(target_path + os.path.sep + target_name, gb_type.value, frame_no, downsampled_image)
             
             if Config.Delete:

@@ -132,7 +132,7 @@ class Trainer:
         total_loss.backward()
 
         # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.0)
+        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.0)
 
         # Update the weights
         self.optimizer.step()

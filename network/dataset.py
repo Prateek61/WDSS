@@ -51,6 +51,8 @@ class ZipUtils:
 
         return torch.from_numpy(frame).permute(2, 0, 1)
     
+PRETONEMAP_MAX_VAL: float = 10.0
+
 class WDSSDataset(Dataset):
     def __init__(
         self,
@@ -216,6 +218,11 @@ class WDSSDataset(Dataset):
                 res[RawFrameGroup.LR_GB][gb_type] = lr_async_res[gb_type].get()
                 res[RawFrameGroup.TEMPORAL_GB][gb_type] = temporal_async_res[gb_type].get()
 
+            # Clamp the pretonemap values to [0, 64]
+            res[RawFrameGroup.HR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.HR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
+            res[RawFrameGroup.LR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.LR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
+            res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
+
         return res
 
     @staticmethod
@@ -290,7 +297,9 @@ class WDSSDataset(Dataset):
         train_dir = settings.get_full_path(settings.dataset_config['train_dir'])
         val_dir = settings.get_full_path(settings.dataset_config['val_dir'])
         test_dir = settings.get_full_path(settings.dataset_config['test_dir'])
-        frames_per_zip = settings.dataset_config['frames_per_zip']
+        frames_per_zip_train = settings.dataset_config['frames_per_zip_train']
+        frames_per_zip_val = settings.dataset_config['frames_per_zip_val']
+        frames_per_zip_test = settings.dataset_config['frames_per_zip_test']
         hr_patch_size = settings.dataset_config['patch_size']
         multi_patches_per_frame = settings.dataset_config['multi_patches_per_frame']
         multiprocessing = settings.dataset_config['multiprocessing']
@@ -300,7 +309,7 @@ class WDSSDataset(Dataset):
         
         train_dataset = WDSSDataset(
             root_dir=train_dir,
-            frames_per_zip=frames_per_zip,
+            frames_per_zip=frames_per_zip_train,
             hr_patch_size=hr_patch_size,
             multi_patches_per_frame=multi_patches_per_frame,
             resolutions=resolutions,
@@ -309,7 +318,7 @@ class WDSSDataset(Dataset):
         )
         val_dataset = WDSSDataset(
             root_dir=val_dir,
-            frames_per_zip=frames_per_zip,
+            frames_per_zip=frames_per_zip_val,
             hr_patch_size=hr_patch_size,
             multi_patches_per_frame=multi_patches_per_frame,
             resolutions=resolutions,
@@ -318,7 +327,7 @@ class WDSSDataset(Dataset):
         )
         test_dataset = WDSSDataset(
             root_dir=test_dir,
-            frames_per_zip=frames_per_zip,
+            frames_per_zip=frames_per_zip_test,
             hr_patch_size=hr_patch_size,
             multi_patches_per_frame=multi_patches_per_frame,
             resolutions=resolutions,

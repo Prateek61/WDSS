@@ -50,6 +50,8 @@ class Preprocessor:
         else:
             raise ValueError(f"Unknown reconstruction frame type: {self.reconstruction_frame_type}")
         
+        extra['SPATIAL_MASK'] = spatial_mask
+        
         res[FrameGroup.GB_INP.value] = gb_inp
         res[FrameGroup.LR_INP.value] = lr_inp
         res[FrameGroup.GT.value] = gt
@@ -148,6 +150,8 @@ class Preprocessor:
         )
         temporal = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
 
+        extra['TEMPORAL_PRETONEMAP'] = warped_temporal.squeeze(0)
+
         return gt, lr, temporal, extra
     
     def _construct_irridiance_inputs(
@@ -180,6 +184,12 @@ class Preprocessor:
             motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_TYPE.MV_ROUGHNESS_NOV][0:2, :, :].unsqueeze(0)
         )
         temporal_inp = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
+
+        warped_temporal_pretonemap = Mask.warp_frame(
+            frame=BRDFProcessor.brdf_remodulate(frame=temporal_irridiance, brdf_map=temporal_brdf).unsqueeze(0),
+            motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_TYPE.MV_ROUGHNESS_NOV][0:2, :, :].unsqueeze(0)
+        )
+        extra['TEMPORAL_PRETONEMAP'] = warped_temporal_pretonemap.squeeze(0)
 
         return gt_irridiance, lr_irridiance, temporal_inp, extra
 
