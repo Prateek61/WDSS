@@ -1,24 +1,28 @@
 {
-    "job_name": "testing",
-    "description": "Testing configurations",
+    "job_name": "Testing",
+    "description": "testing",
     "out_dir": "out",
     "model_dir": "model",
     "log_dir": "logs",
     "model_save_interval": 1,
-    "image_log_interval": 1,
+    "image_log_interval": 2,
     "batch_size": 8,
     "test_images_idx": [
         [0, 2.0],
-        [80, 2.0]
+        [150, 2.0],
+        [0, 3.0],
+        [150, 3.0],
+        [0, 4.0],
+        [150, 4.0]
     ],
     "dataset_config": {
         "train_dir": "Data/train",
         "val_dir": "Data/val",
-        "test_dir": "Data/val",
+        "test_dir": "Data/test",
         "frames_per_zip_train": 185,
         "frames_per_zip_val": 100,
         "frames_per_zip_test": 100,
-        "patch_size": 512,
+        "patch_size": 432,
         "multi_patches_per_frame": false,
         "multiprocessing": true,
         "resolutions": {
