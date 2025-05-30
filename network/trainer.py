@@ -211,9 +211,10 @@ class Trainer:
 
                 # Update the progress bar
                 progress_bar.update(1)
-                progress_bar.set_postfix(loss=total_loss / (i), **{
-                    k: v / (i) for k, v in total_metrics.items()
-                })
+                # progress_bar.set_postfix(loss=total_loss / (i), **{
+                #     k: v / (i) for k, v in total_metrics.items()
+                # })
+                progress_bar.set_postfix(loss=total_loss / (i))
 
             # Start the next batch
             async_result = self._thread_pool.apply_async(
@@ -237,7 +238,8 @@ class Trainer:
 
         # Update the learning progress bar
         progress_bar.update(1)
-        progress_bar.set_postfix(loss=total_loss, **total_metrics)
+        # progress_bar.set_postfix(loss=total_loss, **total_metrics)
+        progress_bar.set_postfix(loss=total_loss)
         # Close the progress bar
         progress_bar.close()
 
@@ -281,9 +283,10 @@ class Trainer:
 
                 # Update the progress bar
                 progress_bar.update(1)
-                progress_bar.set_postfix(loss=total_loss / (i), **{
-                    k: v / (i) for k, v in total_metrics.items()
-                })
+                # progress_bar.set_postfix(loss=total_loss / (i), **{
+                #     k: v / (i) for k, v in total_metrics.items()
+                # })
+                progress_bar.set_postfix(loss=total_loss / (i))
 
             # Start the next batch
             async_result = self._thread_pool.apply_async(
@@ -307,7 +310,8 @@ class Trainer:
 
         # Update the learning progress bar
         progress_bar.update(1)
-        progress_bar.set_postfix(loss=total_loss, **total_metrics)
+        # progress_bar.set_postfix(loss=total_loss, **total_metrics)
+        progress_bar.set_postfix(loss=total_loss)
         
         # Close the progress bar
         progress_bar.close()

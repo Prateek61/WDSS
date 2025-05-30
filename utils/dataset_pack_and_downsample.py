@@ -41,6 +41,8 @@ class Config:
         ("360P", (640, 360)),
         ("270P", (480, 270))
     ]
+    Train_Data_Range = (2, 188)
+    Val_Data_Range = (2, 103)
 
 class FileUtils:
     @staticmethod

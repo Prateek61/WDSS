@@ -149,7 +149,7 @@ class CriterionDFASR(CriterionBase):
         temporal: float = 0.3,
         lpips_net: str = 'alex'
     ):
-        super(CriterionDFASR, self).__init__("Combined")
+        super(CriterionDFASR, self).__init__("DFASR")
         self.lpips_model = LPIPS(net=lpips_net)
         self.l1_loss = L1Norm()
         self.ssim_loss = SSIM()
