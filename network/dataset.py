@@ -294,9 +294,9 @@ class WDSSDataset(Dataset):
         """
 
         preprocessor = Preprocessor.from_config(settings.preprocessor_config)
-        train_dir = settings.get_full_path(settings.dataset_config['train_dir'])
-        val_dir = settings.get_full_path(settings.dataset_config['val_dir'])
-        test_dir = settings.get_full_path(settings.dataset_config['test_dir'])
+        train_dir = settings.dataset_config['train_dir']
+        val_dir = settings.dataset_config['val_dir']
+        test_dir = settings.dataset_config['test_dir']
         frames_per_zip_train = settings.dataset_config['frames_per_zip_train']
         frames_per_zip_val = settings.dataset_config['frames_per_zip_val']
         frames_per_zip_test = settings.dataset_config['frames_per_zip_test']
