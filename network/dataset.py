@@ -52,6 +52,7 @@ class ZipUtils:
         return torch.from_numpy(frame).permute(2, 0, 1)
     
 PRETONEMAP_MAX_VAL: float = 10.0
+DEPTH_MAX_VAL: float = 100.0
 
 class WDSSDataset(Dataset):
     def __init__(
@@ -222,6 +223,9 @@ class WDSSDataset(Dataset):
             res[RawFrameGroup.HR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.HR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
             res[RawFrameGroup.LR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.LR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
             res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
+            res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
+            res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
+            res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
 
         return res
 
