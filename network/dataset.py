@@ -93,7 +93,7 @@ class WDSSDataset(Dataset):
     def __len__(self) -> int:
         return self.total_frames
     
-    # @wrap_try
+    @wrap_try
     def __getitem__(self, index) -> Dict[str, torch.Tensor | Dict[str, torch.Tensor]]:
         raw_frames = self.get_raw_frames(index, self.default_upscale_factor)
         return self.preprocessor.preprocess(raw_frames)
