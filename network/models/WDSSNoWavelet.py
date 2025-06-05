@@ -9,11 +9,11 @@ from datetime import datetime
 
 from typing import Tuple, Dict, Any
 
-class WDSSRegular(ModelBase):
+class WDSSNoWavelet(ModelBase):
     def __init__(
         self,
     ):
-        super(WDSSRegular, self).__init__()
+        super(WDSSNoWavelet, self).__init__()
 
         self.lr_feat_extractor = LRFrameFeatureExtractor(
             12,
