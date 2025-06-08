@@ -1,6 +1,7 @@
 from .WDSSRegular import WDSSRegular, ModelBase
 from .WDSSNoTemp import WDSSNoTemp
 from .WDSSNoWavelet import WDSSNoWavelet
+from .WDSSMultiHead import WDSSMultiHead
 
 from typing import Dict, Any
 
@@ -11,5 +12,7 @@ def get_model(model_conf: Dict[str, Any]) -> ModelBase:
         return WDSSNoWavelet()
     if model_conf['name'] == 'WDSSNoTemp' and model_conf['version'] == 1.0:
         return WDSSNoTemp()
+    if model_conf['name'] == 'WDSSMultiHead' and model_conf['version'] == 1.0:
+        return WDSSMultiHead()
     
     raise ValueError(f"Unknown model configuration: {model_conf}")

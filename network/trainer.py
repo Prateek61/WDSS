@@ -288,6 +288,8 @@ class Trainer:
                 # })
                 progress_bar.set_postfix(loss=total_loss / (i))
 
+                torch.cuda.empty_cache()
+
             # Start the next batch
             async_result = self._thread_pool.apply_async(
                 func=self._validate_batch,
