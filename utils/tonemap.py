@@ -94,6 +94,8 @@ class SRGBTonemapper(BaseTonemapper):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x * self.gain
+        x = x.clamp(0.0, 1.0)
+        # Apply sRGB gamma correction
         x = x.pow(1.0 / 2.2)
         return x.clamp(0.0, 1.0)
     

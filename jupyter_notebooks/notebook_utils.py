@@ -36,6 +36,7 @@ from utils.wavelet import WaveletProcessor
 from network.losses import *
 from network.model_evaluator import *
 from utils.brdf import BRDFProcessor
+from utils.tonemap import *
 
 from tqdm import tqdm
 

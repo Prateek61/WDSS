@@ -37,14 +37,14 @@ class ImageEvaluator(nn.Module):
     _lpips_device: Optional[torch.device] = None
 
     @staticmethod
-    def initialize_lpips(lpips_device: torch.device = device) -> None:
+    def initialize_lpips(lpips_device: torch.device = device, net: str = "vgg") -> None:
         """
         Initialize the LPIPS model.
         Args:
             lpips_device (torch.device): Device to run the LPIPS model on.
         """
         if ImageEvaluator.lpips_model is None or ImageEvaluator._lpips_device != lpips_device:
-            ImageEvaluator.lpips_model = LPIPS(net='alex').to(lpips_device)
+            ImageEvaluator.lpips_model = LPIPS(net=net).to(lpips_device)
             ImageEvaluator.lpips_model.eval()
             ImageEvaluator._lpips_device = lpips_device
 
