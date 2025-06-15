@@ -298,3 +298,106 @@ class CriterionDFASRNoWavelet(CriterionBase):
             print(metrics)
         return total_loss, metrics
     
+
+class CriterionDFASRMultiLoss(nn.Module):
+    def __init__(
+        self,
+        preprocessor: Preprocessor,
+        l1_wavelet_ll: float = 0.05,
+        l1_wavelet_lh: float = 0.1,
+        l1_wavelet_hl: float = 0.2,
+        l1_wavelet_hh: float = 0.3,
+        l1_reconstructed: float = 1.0,
+        ssim_reconstructed: float = 0.4,
+        perceptual_reconstructed: float = 0.2,
+        mask: float = 0.1,
+        temporal: float = 0.3,
+        lpips_net: str = 'alex'
+    ):
+        super(CriterionDFASRMultiLoss, self).__init__()
+        self.lpips_model = LPIPS(net=lpips_net)
+        self.l1_loss = L1Norm()
+        self.ssim_loss = SSIM()
+        self.preprocessor = preprocessor
+
+        self.l1_wavelet_ll_weight = l1_wavelet_ll
+        self.l1_wavelet_lh_weight = l1_wavelet_lh
+        self.l1_wavelet_hl_weight = l1_wavelet_hl
+        self.l1_wavelet_hh_weight = l1_wavelet_hh
+        self.l1_reconstructed_weight = l1_reconstructed
+        self.ssim_reconstructed_weight = ssim_reconstructed
+        self.perceptual_reconstructed_weight = perceptual_reconstructed
+        self.mask_weight = mask
+        self.temporal_weight = temporal
+        self.lpips_net = lpips_net
+    
+    def forward(
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+        pred_wavelets: torch.Tensor,
+        target_wavelets: torch.Tensor,
+        inps: Dict[str, torch.Tensor | Dict[str, torch.Tensor]]
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        extra = inps["EXTRA"]
+        metrics: Dict[str, torch.Tensor] = {}
+
+        # Compute the L1 loss for the wavelet coefficients
+        l1_wavelet_ll = self.l1_loss(pred_wavelets[:, 0:3], target_wavelets[:, 0:3])
+        l1_wavelet_lh = self.l1_loss(pred_wavelets[:, 3:6], target_wavelets[:, 3:6])
+        l1_wavelet_hl = self.l1_loss(pred_wavelets[:, 6:9], target_wavelets[:, 6:9])
+        l1_wavelet_hh = self.l1_loss(pred_wavelets[:, 9:12], target_wavelets[:, 9:12])
+        
+        metrics["l1_wavelet_ll"] = l1_wavelet_ll
+        metrics["l1_wavelet_lh"] = l1_wavelet_lh
+        metrics["l1_wavelet_hl"] = l1_wavelet_hl
+        metrics["l1_wavelet_hh"] = l1_wavelet_hh
+
+        # Post-process the frames
+        pred_processed = self.preprocessor.postprocess(pred, extra)
+        target_processed = self.preprocessor.postprocess(target, extra)
+
+        # Compute the L1 loss for the reconstructed image
+        l1_reconstructed = self.l1_loss(pred_processed, target_processed)
+        metrics["l1_reconstructed"] = l1_reconstructed
+        # Compute the SSIM loss for the reconstructed image
+        ssim_reconstructed = 1 - self.ssim_loss(pred_processed, target_processed)
+        metrics["ssim_reconstructed"] = ssim_reconstructed
+        # Compute the LPIPS loss for the reconstructed image
+        pred_processed_norm = reinhard_norm(pred_processed)
+        target_processed_norm = reinhard_norm(target_processed)
+        lpips_reconstructed = self.lpips_model(pred_processed_norm * 2 - 1, target_processed_norm * 2 - 1).mean()
+        metrics["lpips_reconstructed"] = lpips_reconstructed
+
+        # Compute the mask loss
+        spatial_mask = extra["SPATIAL_MASK"]
+        mask_loss = (spatial_mask * torch.abs(pred_processed - target_processed)).sum() / (spatial_mask.sum() + 1)
+        metrics["mask_loss"] = mask_loss
+
+        # Temporal loss
+        temporal_pretonemap_warped = extra["TEMPORAL_PRETONEMAP"]
+        temporal_output = pred_processed - temporal_pretonemap_warped
+        temporal_target = target_processed - temporal_pretonemap_warped
+        temporal_loss = self.l1_loss(temporal_output, temporal_target)
+        metrics["temporal_loss"] = temporal_loss
+
+        # Compute the total loss
+        total_loss = (
+            self.l1_wavelet_ll_weight * l1_wavelet_ll +
+            self.l1_wavelet_lh_weight * l1_wavelet_lh +
+            self.l1_wavelet_hl_weight * l1_wavelet_hl +
+            self.l1_wavelet_hh_weight * l1_wavelet_hh +
+            self.l1_reconstructed_weight * l1_reconstructed +
+            self.ssim_reconstructed_weight * ssim_reconstructed +
+            self.perceptual_reconstructed_weight * lpips_reconstructed +
+            self.mask_weight * mask_loss +
+            self.temporal_weight * temporal_loss
+        )
+
+        if total_loss != total_loss:  # Check for NaN
+            total_loss = torch.tensor(0.0, device=pred.device)
+            print("Total loss is NaN. Setting to 0.0")
+            print(metrics)
+
+        return total_loss, metrics
+    

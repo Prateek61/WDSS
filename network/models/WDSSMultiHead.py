@@ -41,7 +41,7 @@ class WDSSMultiHead(ModelBase):
             gb_feat_c=32,
             mlp_inp_c=64,
             mlp_layer_count=4,
-            mlp_layer_size=42
+            mlp_layer_size=32
         )
         self.final_wavelet_conv = nn.Conv2d(12, 12, kernel_size=3, padding=1, stride=1)
 
