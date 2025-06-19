@@ -50,5 +50,12 @@ def initialize_settings(config_path: str = "config/config.json", out_dir_in_conf
     
     return settings
 
+def set_matplotlib_dpi(dpi: int = 100):
+    """
+    Set the matplotlib dpi for better visualization.
+    """
+    plt.rcParams['figure.dpi'] = dpi
+    plt.rcParams['savefig.dpi'] = dpi
+
 def get_preprocessor(settings: Settings) -> Preprocessor:
     return Preprocessor.from_config(settings.preprocessor_config)

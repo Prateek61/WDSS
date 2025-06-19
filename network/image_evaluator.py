@@ -58,7 +58,8 @@ class ImageEvaluator(nn.Module):
         Returns:
             torch.Tensor: SSIM value.
         """
-        return ssim(img1, img2)
+        with torch.no_grad():
+            return ssim(img1, img2)
     
     @staticmethod
     def psnr(img1: torch.Tensor, img2: torch.Tensor, max_val: float) -> torch.Tensor:

@@ -332,9 +332,14 @@ class Trainer:
             checkpoint_path=os.path.join(self.settings.model_path(), file_name)
         )
 
-    def load_checkpoint(self, file_name: str) -> None:
+    def load_checkpoint(self, file_name: str = None, epoch: int = None) -> None:
         """Load the model checkpoint from a file.
         """
+        if not file_name and not epoch:
+            raise ValueError("Either file_name or epoch must be provided to load a checkpoint.")
+        if not file_name:
+            file_name = f'epoch_{epoch}.pth'
+
         total_epochs, validation_loss = ModelUtils.load_checkpoint(
             model=self.model,
             optimizer=self.optimizer,
