@@ -3,9 +3,30 @@ import pywt
 import ptwt
 import matplotlib.pyplot as plt
 import cv2 as cv
+from .swt import swavedec2, swaverec2
 
 
 class WaveletProcessor:
+    WAVELET_TRANSFORM_TYPE = 'dwt' # 'dwt', 'swt
+
+    @staticmethod
+    def _wt(image: torch.Tensor, wavelet: str, level: int = 1) -> torch.Tensor:
+        if WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'dwt':
+            return ptwt.wavedec2(image, pywt.Wavelet(wavelet), level=level)
+        elif WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'swt':
+            return swavedec2(image, pywt.Wavelet(wavelet), level=level)
+        else:
+            raise ValueError("Unsupported wavelet transform type. Use 'dwt' or 'swt'.")
+        
+    @staticmethod
+    def _iwt(coeffs: torch.Tensor, wavelet: str) -> torch.Tensor:
+        if WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'dwt':
+            return ptwt.waverec2(coeffs, pywt.Wavelet(wavelet))
+        elif WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'swt':
+            return swaverec2(coeffs, pywt.Wavelet(wavelet))
+        else:
+            raise ValueError("Unsupported inverse wavelet transform type. Use 'dwt' or 'swt'.")
+
     @staticmethod
     def wavelet_transform_image(image, wavelet='haar', level=1):
         """
@@ -21,8 +42,8 @@ class WaveletProcessor:
         coefficients = []
 
         for channel in channels:
-            coeffs = ptwt.wavedec2(channel, pywt.Wavelet(wavelet), level=level)
-            
+            # coeffs = ptwt.wavedec2(channel, pywt.Wavelet(wavelet), level=level)
+            coeffs = WaveletProcessor._wt(channel, wavelet, level)
             
             coeffs = (coeffs[0].squeeze(0), tuple(c.squeeze(0) for c in coeffs[1]))
             
@@ -64,7 +85,8 @@ class WaveletProcessor:
             diag = coefficients[i + 9].unsqueeze(0).unsqueeze(0)
             coeffs = (approx, (hor, ver, diag))
 
-            channel = ptwt.waverec2(coeffs, pywt.Wavelet(wavelet))[0, 0]
+            # channel = ptwt.waverec2(coeffs, pywt.Wavelet(wavelet))[0, 0]
+            channel = WaveletProcessor._iwt(coeffs, wavelet)[0, 0]
             channels.append(channel)
 
         reconstructed = torch.stack(channels, dim=0)
@@ -107,22 +129,3 @@ class WaveletProcessor:
         mse = torch.mean((image - reconstructed_image) ** 2)
         psnr = 10 * torch.log10(255**2 / mse)
         print(f"PSNR: {psnr.item():.2f} dB")
-
-
-if __name__ == '__main__':
-    # Load an image and apply wavelet transform
-    image  = cv.imread('g.jpg')
-    image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
-    
-    image = torch.tensor(image, dtype=torch.float32).permute(2, 0, 1)
-    print(image.shape)
-    
-    
-    wt = WaveletProcessor.wavelet_transform_image(image, wavelet='haar', level=1)
-    print(wt.shape)
-    
-    iwt = WaveletProcessor.reconstruct_image(wt, wavelet='haar')
-    print(iwt.shape)
-    
-    WaveletProcessor.test_pipeline(image, wavelet='haar', level=1)
-    
