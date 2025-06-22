@@ -27,6 +27,7 @@ class Settings:
         self.image_log_interval: int = settings["image_log_interval"]
         self.settings_dir_path: str = os.path.dirname(settings_path)
         self.out_dir_in_config_path: bool = out_dir_in_config_path
+        self.wt_type = settings.get("wt_type", "dwt")
 
     def get_full_path(self, folder: str) -> str:
         return os.path.join(self.get_base_path(), folder)

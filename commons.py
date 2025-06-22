@@ -1,7 +1,7 @@
 import os
 
 from config import Settings, device
-
+from utils.wavelet import WaveletProcessor
 from typing import TypeVar, Tuple
 
 def initialize(settings: Settings, craete_paths: bool = True) -> None:
@@ -15,6 +15,8 @@ def initialize(settings: Settings, craete_paths: bool = True) -> None:
         for folder in [settings.log_path(), settings.model_path()]:
             os.makedirs(folder, exist_ok=True)
     
+    WaveletProcessor.WAVELET_TRANSFORM_TYPE = settings.wt_type
+
     print(f"Job: {settings.job_name}, Device: {device}")
     print(f"Model path: {settings.model_path()}")
     print(f"Log path: {settings.log_path()}")
