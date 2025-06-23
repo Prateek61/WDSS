@@ -72,4 +72,6 @@ class WDSSSWT(ModelBase):
         wavelet_out = self.final_wavelet_conv(wavelet_out)
 
         # Inverse wavelet transform
-        wavelet_out = WaveletProcessor.batch_iwt(wavelet_out).clamp(min=0.0, max=None)
+        image_out = WaveletProcessor.batch_iwt(wavelet_out).clamp(min=0.0, max=None)
+
+        return wavelet_out, image_out
