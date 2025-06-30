@@ -223,9 +223,24 @@ class WDSSDataset(Dataset):
             res[RawFrameGroup.HR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.HR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
             res[RawFrameGroup.LR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.LR_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
             res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :] = torch.clamp(res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.PRETONEMAP_METALLIC][0:3, :, :], 0.0, PRETONEMAP_MAX_VAL)
-            res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
-            res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
-            res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
+            # res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
+            # res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
+            # res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.clamp(res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :], 0.0, DEPTH_MAX_VAL)
+            res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.where(
+                res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] > DEPTH_MAX_VAL,
+                torch.tensor(0, device="cpu"),
+                res[RawFrameGroup.HR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :]
+            )
+            res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.where(
+                res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] > DEPTH_MAX_VAL,
+                torch.tensor(0, device="cpu"),
+                res[RawFrameGroup.LR_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :]
+            )
+            res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] = torch.where(
+                res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :] > DEPTH_MAX_VAL,
+                torch.tensor(0, device="cpu"),
+                res[RawFrameGroup.TEMPORAL_GB][GB_TYPE.BASE_COLOR_DEPTH][3:4, :, :]
+            )
 
         return res
 
