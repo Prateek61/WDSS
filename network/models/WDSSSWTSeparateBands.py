@@ -69,7 +69,7 @@ class WDSSSWTSeparateBands(ModelBase):
         wavelet_out = F.pixel_shuffle(wavelet_out, 2)
 
         # Wavelet convolution
-        # wavelet_out = self.final_wavelet_conv(wavelet_out)
+        wavelet_out = self.final_wavelet_conv(wavelet_out)
 
         # Inverse wavelet transform
         image_out = WaveletProcessor.batch_iwt(wavelet_out).clamp(0.0, None)

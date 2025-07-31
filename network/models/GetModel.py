@@ -3,6 +3,7 @@ from .WDSSNoTemp import WDSSNoTemp
 from .WDSSNoWavelet import WDSSNoWavelet
 from .WDSSMultiHead import WDSSMultiHead
 from .WDSSSWT import WDSSSWT
+from .WDSSSWTSeparateBands import WDSSSWTSeparateBands
 
 from typing import Dict, Any
 
@@ -17,5 +18,7 @@ def get_model(model_conf: Dict[str, Any]) -> ModelBase:
         return WDSSMultiHead()
     if model_conf['name'] == 'WDSSSWT' and model_conf['version'] == 1.0:
         return WDSSSWT()
+    if model_conf['name'] == 'WDSSSWTSeparateBands' and model_conf['version'] == 1.0:
+        return WDSSSWTSeparateBands()
     
     raise ValueError(f"Unknown model configuration: {model_conf}")
