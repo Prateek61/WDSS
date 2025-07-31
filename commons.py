@@ -16,6 +16,7 @@ def initialize(settings: Settings, craete_paths: bool = True) -> None:
             os.makedirs(folder, exist_ok=True)
     
     WaveletProcessor.WAVELET_TRANSFORM_TYPE = settings.wt_type
+    WaveletProcessor.WAVELET_TYPE = settings.wavelet_type
 
     print(f"Job: {settings.job_name}, Device: {device}")
     print(f"Model path: {settings.model_path()}")

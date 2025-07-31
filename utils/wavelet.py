@@ -8,9 +8,10 @@ from .swt import swavedec2, swaverec2
 
 class WaveletProcessor:
     WAVELET_TRANSFORM_TYPE = 'dwt' # 'dwt', 'swt
+    WAVELET_TYPE = 'haar' # Default wavelet type, can be changed to any valid PyWavelets wavelet
 
     @staticmethod
-    def _wt(image: torch.Tensor, wavelet: str, level: int = 1) -> torch.Tensor:
+    def _wt(image: torch.Tensor, wavelet: str = WAVELET_TYPE, level: int = 1) -> torch.Tensor:
         if WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'dwt':
             return ptwt.wavedec2(image, pywt.Wavelet(wavelet), level=level)
         elif WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'swt':
@@ -19,7 +20,7 @@ class WaveletProcessor:
             raise ValueError("Unsupported wavelet transform type. Use 'dwt' or 'swt'.")
         
     @staticmethod
-    def _iwt(coeffs: torch.Tensor, wavelet: str) -> torch.Tensor:
+    def _iwt(coeffs: torch.Tensor, wavelet: str = WAVELET_TYPE) -> torch.Tensor:
         if WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'dwt':
             return ptwt.waverec2(coeffs, pywt.Wavelet(wavelet))
         elif WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'swt':
@@ -28,7 +29,7 @@ class WaveletProcessor:
             raise ValueError("Unsupported inverse wavelet transform type. Use 'dwt' or 'swt'.")
 
     @staticmethod
-    def wavelet_transform_image(image, wavelet='haar', level=1):
+    def wavelet_transform_image(image, wavelet=WAVELET_TYPE, level=1):
         """
         Apply wavelet transform to each color channel of the image on GPU.
         Returns RGB channel coefficients in the following order:
@@ -73,7 +74,7 @@ class WaveletProcessor:
         return norm_coeffs.to(torch.uint8)
 
     @staticmethod
-    def reconstruct_image(coefficients, wavelet='haar'):
+    def reconstruct_image(coefficients, wavelet=WAVELET_TYPE):
         """
         Reconstruct the original image from wavelet coefficients on GPU.
         """
@@ -93,7 +94,7 @@ class WaveletProcessor:
         return reconstructed.float()
 
     @staticmethod
-    def batch_wt(image_batch, wavelet='haar', level = 1):
+    def batch_wt(image_batch, wavelet=WAVELET_TYPE, level = 1):
         """
         Apply wavelet transform to a batch of images.
         """
@@ -103,7 +104,7 @@ class WaveletProcessor:
             coeffs_batch.append(coeffs)
         return torch.stack(coeffs_batch, dim=0)
 
-    def batch_iwt(coeffs_batch, wavelet='haar'):
+    def batch_iwt(coeffs_batch, wavelet=WAVELET_TYPE):
         """
         Reconstruct a batch of images from wavelet coefficients.
         """
@@ -115,7 +116,7 @@ class WaveletProcessor:
 
 
     @staticmethod
-    def test_pipeline(image, wavelet='haar', level=1):
+    def test_pipeline(image, wavelet=WAVELET_TYPE, level=1):
         """
         Test the full wavelet processing pipeline: transform, normalize, reconstruct, and evaluate.
         """
