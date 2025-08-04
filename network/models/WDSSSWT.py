@@ -68,7 +68,8 @@ class WDSSSWT(ModelBase):
 
         # Pixel shuffle
         wavelet_out = F.pixel_shuffle(wavelet_out, 2)
-        # Final wavelet convolution        wavelet_out = self.final_wavelet_conv(wavelet_out)
+        # Final wavelet convolution   
+        wavelet_out = self.final_wavelet_conv(wavelet_out)
 
         # Inverse wavelet transform
         image_out = WaveletProcessor.batch_iwt(wavelet_out).clamp(min=0.0, max=None)
