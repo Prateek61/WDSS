@@ -22,3 +22,8 @@ class ModelBase(nn.Module, ABC):
             Tuple[torch.Tensor, torch.Tensor]: Output wavelet coefficients and final image
         """
         pass
+
+def reparameterize_model(model: ModelBase) -> None:
+    for module in model.modules():
+        if hasattr(module, 'reparameterize'):
+            module.reparameterize()

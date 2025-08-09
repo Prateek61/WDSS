@@ -12,3 +12,4 @@ tensorboard # for logging
 pandas
 py-cpuinfo
 OpenEXR
+tabulate

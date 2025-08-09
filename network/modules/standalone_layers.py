@@ -40,8 +40,15 @@ class ResBlock(nn.Module):
         self.expand_conv = nn.Conv2d(n_feats, int(ratio*n_feats), 1, 1, 0)
         self.fea_conv = nn.Conv2d(int(ratio*n_feats), int(ratio*n_feats), 3, 1, 1)
         self.reduce_conv = nn.Conv2d(int(ratio*n_feats), n_feats, 1, 1, 0)
+        self.reparamed = False
+        self.n_feats = n_feats
+        self.ratio = ratio
+        self.reparamed_conv = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # if self.reparamed:
+        #     return self.reparamed_conv(x)
+
         out: torch.Tensor = self.expand_conv(x)
         out_identify: torch.Tensor = out
 
@@ -54,6 +61,62 @@ class ResBlock(nn.Module):
         out += x
 
         return out
+    
+    def reparameterize(self):
+        # Merge conv1x1, conv3x3, and conv1x1 into a single conv layer
+        if self.reparamed:
+            return
+        
+        device = self.expand_conv.weight.device
+        
+        # Get the weights of the convolution layers
+        w1 = self.expand_conv.weight
+        w2 = self.fea_conv.weight
+        w3 = self.reduce_conv.weight
+        b1 = self.expand_conv.bias
+        b2 = self.fea_conv.bias
+        b3 = self.reduce_conv.bias
+        
+        mid_feats, n_feats = w1.shape[:2]
+
+        # First step: remove the middle identity
+        w2_mod = w2.detach().clone()
+        for i in range(mid_feats):
+            w2_mod[i, i, 1, 1] += 1.0
+
+        # Second step: fuse the first conv1x1 and conv3x3
+        merged_k1k2 = F.conv2d(input=w2_mod, weight=w1.permute(1, 0, 2, 3))
+        merged_b1b2 = b1.view(1, -1, 1, 1) * torch.ones(1, mid_feats, 3, 3, device=device)
+        merged_b1b2 = F.conv2d(input=merged_b1b2, weight=w2_mod, bias=b2)
+
+        # Third step: merge the remaining 1x1 convolution
+        merged_w1w2w3 = F.conv2d(input=merged_k1k2.permute(1, 0, 2, 3), weight=w3).permute(1, 0, 2, 3)
+        merged_b1b2b3 = F.conv2d(input=merged_b1b2, weight=w3, bias=b3).view(-1)
+
+        # Last step: remove the global identity
+        for i in range(n_feats):
+            merged_w1w2w3[i, i, 1, 1] += 1.0
+
+        # Create the reparameterized convolution layer
+        self.reparamed_conv = nn.Conv2d(
+            in_channels=self.n_feats,
+            out_channels=self.n_feats,
+            kernel_size=3,
+            padding=1,
+            stride=1
+        )
+        self.reparamed_conv.weight = nn.Parameter(merged_w1w2w3)
+        self.reparamed_conv.bias = nn.Parameter(merged_b1b2b3)
+
+        def reparamed_forward(x: torch.Tensor) -> torch.Tensor:
+            return self.reparamed_conv(x)
+        
+        self.forward = reparamed_forward
+        self.reparamed = True
+
+        del self.expand_conv
+        del self.fea_conv
+        del self.reduce_conv
     
 
 class LightWeightGatedConv2D(nn.Module):
