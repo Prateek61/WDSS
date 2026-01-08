@@ -56,6 +56,15 @@ class Trainer:
             shuffle=False
         )
 
+    def cleanup(self) -> None:
+        """Cleanup the thread pool.
+        """
+        try:
+            self._thread_pool.close()
+            self._thread_pool.join()
+        except Exception:
+            pass  # Suppress any errors during cleanup
+
     def train(self, epochs: int = 1, no_log_gt: bool = False) -> None:
         """Train the model for a specified number of epochs.
         """

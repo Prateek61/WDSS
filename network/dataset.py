@@ -90,6 +90,19 @@ class WDSSDataset(Dataset):
         if self.multiprocessing:
             self._thread_pool = ThreadPool(12)
 
+    def __del__(self):
+        """Cleanup method to properly close the thread pool"""
+        self.cleanup()
+
+    def cleanup(self):
+        """Explicitly cleanup the thread pool"""
+        if hasattr(self, '_thread_pool') and hasattr(self, 'multiprocessing') and self.multiprocessing:
+            try:
+                self._thread_pool.terminate()
+                self._thread_pool.join()
+            except Exception:
+                pass  # Suppress any errors during cleanup
+
     def __len__(self) -> int:
         return self.total_frames
     
