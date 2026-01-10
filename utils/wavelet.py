@@ -5,25 +5,31 @@ import matplotlib.pyplot as plt
 import cv2 as cv
 from .swt import swavedec2, swaverec2
 
+from typing import Optional
+
+
+class WaveletProps:
+    WAVELET_TRANSFORM_TYPE = 'dwt' # 'dwt', 'swt'
+    WAVELET_TYPE = 'haar' # Default wavelet type, can be changed to any valid PyWavelets wavelet
+    DECOMPOSITION_LEVEL = 1
 
 class WaveletProcessor:
-    WAVELET_TRANSFORM_TYPE = 'dwt' # 'dwt', 'swt
-    WAVELET_TYPE = 'haar' # Default wavelet type, can be changed to any valid PyWavelets wavelet
-
     @staticmethod
-    def _wt(image: torch.Tensor, wavelet: str = WAVELET_TYPE, level: int = 1) -> torch.Tensor:
-        if WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'dwt':
+    def _wt(image: torch.Tensor, wavelet: str, level: int = 1) -> torch.Tensor:
+        # print(f"Wavelet Transform Type: {wavelet}, Level: {level}")
+        if WaveletProps.WAVELET_TRANSFORM_TYPE == 'dwt':
             return ptwt.wavedec2(image, pywt.Wavelet(wavelet), level=level)
-        elif WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'swt':
+        elif WaveletProps.WAVELET_TRANSFORM_TYPE == 'swt':
             return swavedec2(image, pywt.Wavelet(wavelet), level=level)
         else:
             raise ValueError("Unsupported wavelet transform type. Use 'dwt' or 'swt'.")
         
     @staticmethod
-    def _iwt(coeffs: torch.Tensor, wavelet: str = WAVELET_TYPE) -> torch.Tensor:
-        if WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'dwt':
+    def _iwt(coeffs: torch.Tensor, wavelet: str) -> torch.Tensor:
+        # print(f"Inverse Wavelet Transform Type: {wavelet}")
+        if WaveletProps.WAVELET_TRANSFORM_TYPE == 'dwt':
             return ptwt.waverec2(coeffs, pywt.Wavelet(wavelet))
-        elif WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'swt':
+        elif WaveletProps.WAVELET_TRANSFORM_TYPE == 'swt':
             return swaverec2(coeffs, pywt.Wavelet(wavelet))
         else:
             raise ValueError("Unsupported inverse wavelet transform type. Use 'dwt' or 'swt'.")
@@ -37,7 +43,7 @@ class WaveletProcessor:
         return 3 + 9 * level
 
     @staticmethod
-    def wavelet_transform_image(image, wavelet=WAVELET_TYPE, level=1):
+    def wavelet_transform_image(image, wavelet, level=1):
         """
         Apply multi-level wavelet transform to each color channel of the image on GPU.
         
@@ -59,7 +65,7 @@ class WaveletProcessor:
             raise ValueError("Input image must have shape (3, H, W) for RGB format.")
 
         # For DWT with level > 1, coefficients have different sizes - cannot stack
-        if WaveletProcessor.WAVELET_TRANSFORM_TYPE == 'dwt' and level > 1:
+        if WaveletProps.WAVELET_TRANSFORM_TYPE == 'dwt' and level > 1:
             raise ValueError(
                 "DWT with level > 1 produces coefficients of different sizes that cannot be stacked. "
                 "Use SWT (set WAVELET_TRANSFORM_TYPE = 'swt') for multi-level decomposition with "
@@ -99,7 +105,7 @@ class WaveletProcessor:
         return channel_coeffs
 
     @staticmethod
-    def wavelet_transform_image_multilevel_dwt(image, wavelet=WAVELET_TYPE, level=1):
+    def wavelet_transform_image_multilevel_dwt(image, wavelet, level=1):
         """
         Apply multi-level DWT to each color channel of the image.
         Returns a list structure that preserves different coefficient sizes.
@@ -153,7 +159,7 @@ class WaveletProcessor:
         return norm_coeffs.to(torch.uint8)
 
     @staticmethod
-    def reconstruct_image(coefficients, wavelet=WAVELET_TYPE, level=1):
+    def reconstruct_image(coefficients, wavelet, level=1):
         """
         Reconstruct the original image from multi-level wavelet coefficients on GPU.
         
@@ -198,7 +204,7 @@ class WaveletProcessor:
         return reconstructed.float()
 
     @staticmethod
-    def reconstruct_image_multilevel_dwt(approx_tensor, detail_tensors, wavelet=WAVELET_TYPE):
+    def reconstruct_image_multilevel_dwt(approx_tensor, detail_tensors, wavelet):
         """
         Reconstruct the original image from multi-level DWT coefficients.
         
@@ -234,7 +240,7 @@ class WaveletProcessor:
         return reconstructed.float()
 
     @staticmethod
-    def batch_wt(image_batch, wavelet=WAVELET_TYPE, level=1):
+    def batch_wt(image_batch, wavelet: Optional[str] = None, level: Optional[int] = None):
         """
         Apply multi-level wavelet transform to a batch of images.
         
@@ -246,6 +252,11 @@ class WaveletProcessor:
         Returns:
             Tensor of shape (B, 3 + 9*level, H', W') where H', W' depend on transform type
         """
+        if not wavelet:
+            wavelet = WaveletProps.WAVELET_TYPE
+        if not level:
+            level = WaveletProps.DECOMPOSITION_LEVEL
+
         coeffs_batch = []
         for image in image_batch:
             coeffs = WaveletProcessor.wavelet_transform_image(image, wavelet, level)
@@ -253,7 +264,7 @@ class WaveletProcessor:
         return torch.stack(coeffs_batch, dim=0)
 
     @staticmethod
-    def batch_iwt(coeffs_batch, wavelet=WAVELET_TYPE, level=1):
+    def batch_iwt(coeffs_batch, wavelet: Optional[str] = None, level: Optional[int] = None):
         """
         Reconstruct a batch of images from multi-level wavelet coefficients.
         
@@ -265,6 +276,11 @@ class WaveletProcessor:
         Returns:
             Tensor of shape (B, 3, H', W')
         """
+        if not wavelet:
+            wavelet = WaveletProps.WAVELET_TYPE
+        if not level:
+            level = WaveletProps.DECOMPOSITION_LEVEL
+
         images = []
         for coeffs in coeffs_batch:
             image = WaveletProcessor.reconstruct_image(coeffs, wavelet, level)
@@ -273,7 +289,7 @@ class WaveletProcessor:
 
 
     @staticmethod
-    def test_pipeline(image, wavelet=WAVELET_TYPE, level=1):
+    def test_pipeline(image, wavelet=WaveletProps.WAVELET_TYPE, level=WaveletProps.DECOMPOSITION_LEVEL):
         """
         Test the full wavelet processing pipeline: transform, normalize, reconstruct, and evaluate.
         

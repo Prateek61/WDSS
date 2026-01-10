@@ -29,6 +29,7 @@ class Settings:
         self.out_dir_in_config_path: bool = out_dir_in_config_path
         self.wt_type: str = settings.get("wt_type", "dwt")
         self.wavelet_type: str = settings.get("wavelet_type", "haar")
+        self.decomposition_level: int = settings.get("decomposition_level", 1)
 
     def get_full_path(self, folder: str) -> str:
         return os.path.join(self.get_base_path(), folder)
