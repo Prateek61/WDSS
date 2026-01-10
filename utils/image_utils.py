@@ -344,8 +344,8 @@ class ImageUtils:
         
         b, c, h, w = wavelet.shape
 
-        if c != 12:
-            raise ValueError(f"Expected 12 channels, got {c} channels.")
+        # if c != 12:
+        #     raise ValueError(f"Expected 12 channels, got {c} channels.")
 
         # Get the coefficients
         cA = wavelet[:, 0:3, :, :]
