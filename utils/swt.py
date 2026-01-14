@@ -153,11 +153,12 @@ def swaverec2(
 ) -> torch.Tensor:
     r"""Run a two-dimensional inverse stationary wavelet transform.
     
-    Fully differentiable PyTorch implementation.
+    Fully differentiable PyTorch implementation using the correct iSWT algorithm.
     
-    For SWT, the inverse is computed by applying synthesis filter contributions
-    at each position and averaging over filter shifts. This is the dual operation
-    to the à trous forward transform.
+    The algorithm follows pywt's iswt approach:
+    - For each level, split coefficients into even/odd phases
+    - Apply standard idwt (upsample + filter) to each phase
+    - Shift and average the two phase results
     """
 
     if tuple(axes) != (-2, -1):
@@ -195,7 +196,7 @@ def swaverec2(
     if res_ll.dim() == 2:
         res_ll = res_ll.unsqueeze(0)
         coeffs = (res_ll,) + tuple(
-            (c[0].unsqueeze(0), c[1].unsqueeze(0), c[2].unsqueeze(0)) 
+            WaveletDetailTuple2d(c[0].unsqueeze(0), c[1].unsqueeze(0), c[2].unsqueeze(0)) 
             for c in coeffs[1:]
         )
     
@@ -207,19 +208,16 @@ def swaverec2(
         detail_tuple = coeffs[1 + level_idx]
         res_lh, res_hl, res_hh = detail_tuple
         
-        # Dilation for this level: coarsest has highest dilation
-        # level_idx=0 (coarsest) -> dilation = 2^(num_levels-1)
-        # level_idx=num_levels-1 (finest) -> dilation = 2^0 = 1
-        dilation = 2 ** (num_levels - 1 - level_idx)
+        # Step size for this level: coarsest has highest step_size
+        # level_idx=0 (coarsest) -> step_size = 2^(num_levels-1)
+        # level_idx=num_levels-1 (finest) -> step_size = 2^0 = 1
+        step_size = 2 ** (num_levels - 1 - level_idx)
         
         # Reconstruct using separable 1D iSWT
-        # For 2D separable: first do rows, then cols (or vice versa)
-        # Each 1D iSWT combines shifted filter contributions
-        
         output = _iswt2_level(
             output, res_lh, res_hl, res_hh,
             rec_lo.squeeze(), rec_hi.squeeze(),
-            dilation
+            step_size, filt_len
         )
 
     if ds:
@@ -231,6 +229,121 @@ def swaverec2(
     return output
 
 
+def _idwt1d_single(ca: torch.Tensor, cd: torch.Tensor, 
+                   rec_lo: torch.Tensor, rec_hi: torch.Tensor) -> torch.Tensor:
+    """Single-level 1D inverse DWT (differentiable).
+    
+    Implements: upsample by 2, then convolve with reconstruction filters.
+    Uses periodic boundary conditions. Matches pywt's idwt_single behavior.
+    
+    Args:
+        ca: Approximation coefficients (..., N)
+        cd: Detail coefficients (..., N)
+        rec_lo: Low-pass reconstruction filter (K,)
+        rec_hi: High-pass reconstruction filter (K,)
+        
+    Returns:
+        Reconstructed signal (..., 2*N)
+    """
+    # Get dimensions
+    input_len = ca.shape[-1]
+    filt_len = rec_lo.shape[0]
+    output_len = 2 * input_len
+    
+    # Upsample by 2 (insert zeros between samples)
+    shape = list(ca.shape)
+    shape[-1] = output_len
+    
+    ca_up = torch.zeros(shape, dtype=ca.dtype, device=ca.device)
+    cd_up = torch.zeros(shape, dtype=cd.dtype, device=cd.device)
+    
+    # Even positions get the coefficients
+    ca_up[..., ::2] = ca
+    cd_up[..., ::2] = cd
+    
+    # Convolve with reconstruction filters using circular boundary
+    # The phase offset matches pywt's idwt_single: offset = -(filt_len // 2 - 1)
+    # This comes from the standard wavelet reconstruction phase alignment
+    phase_offset = -(filt_len // 2 - 1)
+    
+    output = torch.zeros(shape, dtype=ca.dtype, device=ca.device)
+    
+    for k in range(filt_len):
+        shift = k + phase_offset
+        ca_shifted = torch.roll(ca_up, shifts=shift, dims=-1)
+        cd_shifted = torch.roll(cd_up, shifts=shift, dims=-1)
+        output = output + rec_lo[k] * ca_shifted + rec_hi[k] * cd_shifted
+    
+    return output
+
+
+def _iswt1d(ca: torch.Tensor, cd: torch.Tensor,
+            rec_lo: torch.Tensor, rec_hi: torch.Tensor,
+            step_size: int, dim: int = -1) -> torch.Tensor:
+    """1D inverse SWT along specified dimension (differentiable).
+    
+    Uses the correct iSWT algorithm from pywt:
+    - Split coefficients into even/odd indexed subsets based on step_size
+    - Apply idwt to each subset
+    - Shift one result and average the two
+    
+    Args:
+        ca: Approximation coefficients
+        cd: Detail coefficients
+        rec_lo: Low-pass reconstruction filter
+        rec_hi: High-pass reconstruction filter
+        step_size: Step size for this level (2^j for level j from coarsest)
+        dim: Dimension to operate on (-1 for last, -2 for second to last)
+        
+    Returns:
+        Reconstructed tensor
+    """
+    # Move target dimension to last position
+    if dim == -2:
+        ca = ca.transpose(-2, -1)
+        cd = cd.transpose(-2, -1)
+    
+    size = ca.shape[-1]
+    output = ca.clone()
+    
+    # Process each starting position from 0 to step_size-1
+    for first in range(step_size):
+        # Get indices for this phase: first, first+step_size, first+2*step_size, ...
+        indices = torch.arange(first, size, step_size, device=ca.device)
+        
+        # Split into even and odd indexed positions within this subset
+        even_indices = indices[0::2]
+        odd_indices = indices[1::2]
+        
+        if len(even_indices) == 0 or len(odd_indices) == 0:
+            continue
+            
+        # Extract coefficients at even and odd positions
+        ca_even = ca[..., even_indices]
+        cd_even = cd[..., even_indices]
+        ca_odd = ca[..., odd_indices]
+        cd_odd = cd[..., odd_indices]
+        
+        # Apply single-level idwt to each subset
+        x1 = _idwt1d_single(ca_even, cd_even, rec_lo, rec_hi)
+        x2 = _idwt1d_single(ca_odd, cd_odd, rec_lo, rec_hi)
+        
+        # Circular shift x2 right by 1
+        x2 = torch.roll(x2, shifts=1, dims=-1)
+        
+        # Average and store back
+        avg = (x1 + x2) / 2.0
+        
+        # Put back into output at the correct indices
+        output[..., indices] = avg
+    
+    # Restore dimension order
+    if dim == -2:
+        output = output.transpose(-2, -1)
+    
+    return output
+
+
 def _iswt2_level(
     ll: torch.Tensor, 
     lh: torch.Tensor, 
@@ -238,9 +351,14 @@ def _iswt2_level(
     hh: torch.Tensor,
     rec_lo: torch.Tensor,
     rec_hi: torch.Tensor,
-    dilation: int
+    step_size: int,
+    filt_len: int
 ) -> torch.Tensor:
     """Reconstruct one level of 2D iSWT using separable 1D operations.
+    
+    For 2D separable wavelet transform:
+    - First apply 1D iSWT along columns (vertical direction)
+    - Then apply 1D iSWT along rows (horizontal direction)
     
     Args:
         ll: Low-low subband (B, H, W)
@@ -249,87 +367,21 @@ def _iswt2_level(
         hh: High-high subband (B, H, W)
         rec_lo: 1D low-pass reconstruction filter
         rec_hi: 1D high-pass reconstruction filter
-        dilation: Filter dilation for this level
+        step_size: Step size for this level
+        filt_len: Filter length
         
     Returns:
         Reconstructed tensor (B, H, W)
     """
-    filt_len = rec_lo.shape[0]
+    # For 2D separable iSWT:
+    # 1. Reconstruct columns: L = iswt1d_col(LL, LH), H = iswt1d_col(HL, HH)
+    # 2. Reconstruct rows: out = iswt1d_row(L, H)
     
-    # For 2D separable iSWT, we need to:
-    # 1. Apply 1D iSWT along rows to get intermediate results
-    # 2. Apply 1D iSWT along cols to get final result
+    # Apply along columns (dim -2)
+    L_col = _iswt1d(ll, lh, rec_lo, rec_hi, step_size, dim=-2)
+    H_col = _iswt1d(hl, hh, rec_lo, rec_hi, step_size, dim=-2)
     
-    # The 1D iSWT formula (for each output position i):
-    # x[i] = (1/filt_len) * sum over k of (rec_lo[k]*cA[i - k*dilation] + rec_hi[k]*cD[i - k*dilation])
-    # with circular indexing
-    
-    # For 2D separable:
-    # First reconstruct columns: L = iswt1d_col(LL, LH), H = iswt1d_col(HL, HH)
-    # Then reconstruct rows: out = iswt1d_row(L, H)
-    
-    # Apply along columns first (dim -2)
-    L_col = _iswt1d(ll, lh, rec_lo, rec_hi, dilation, dim=-2)
-    H_col = _iswt1d(hl, hh, rec_lo, rec_hi, dilation, dim=-2)
-    
-    # Then apply along rows (dim -1)
-    output = _iswt1d(L_col, H_col, rec_lo, rec_hi, dilation, dim=-1)
-    
-    return output
-
-
-def _iswt1d(
-    ca: torch.Tensor,
-    cd: torch.Tensor, 
-    rec_lo: torch.Tensor,
-    rec_hi: torch.Tensor,
-    dilation: int,
-    dim: int
-) -> torch.Tensor:
-    """1D inverse SWT along specified dimension.
-    
-    For each output position i:
-    x[i] = (1/filt_len) * sum_k (rec_lo[k]*cA[i - k*dilation] + rec_hi[k]*cD[i - k*dilation])
-    
-    Args:
-        ca: Approximation coefficients
-        cd: Detail coefficients
-        rec_lo: Low-pass reconstruction filter
-        rec_hi: High-pass reconstruction filter
-        dilation: Filter dilation
-        dim: Dimension to operate on (-1 for rows, -2 for cols)
-        
-    Returns:
-        Reconstructed tensor
-    """
-    filt_len = rec_lo.shape[0]
-    
-    # Move target dimension to last position for easier processing
-    if dim == -2:
-        ca = ca.transpose(-2, -1)
-        cd = cd.transpose(-2, -1)
-    
-    # Get size along the processing dimension
-    size = ca.shape[-1]
-    
-    # Initialize output
-    output = torch.zeros_like(ca)
-    
-    # For each filter coefficient, add shifted contribution
-    for k in range(filt_len):
-        shift = k * dilation
-        # Circular shift: rolling by positive amount shifts values to the right
-        # We want ca[i - k*dilation], so we roll by +shift
-        ca_shifted = torch.roll(ca, shifts=shift, dims=-1)
-        cd_shifted = torch.roll(cd, shifts=shift, dims=-1)
-        
-        output = output + rec_lo[k] * ca_shifted + rec_hi[k] * cd_shifted
-    
-    # Normalize
-    output = output / filt_len
-    
-    # Restore dimension order
-    if dim == -2:
-        output = output.transpose(-2, -1)
+    # Apply along rows (dim -1)
+    output = _iswt1d(L_col, H_col, rec_lo, rec_hi, step_size, dim=-1)
     
     return output
