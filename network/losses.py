@@ -439,9 +439,9 @@ class CriterionDFASRSWT(CriterionBase):
         metrics: Dict[str, torch.Tensor] = {}
 
         # Clip the borders, only relevant for SWT
-        CLIP_SIZE = 1
-        pred_wavelets = pred_wavelets[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
-        target_wavelets = target_wavelets[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
+        # CLIP_SIZE = 1
+        # pred_wavelets = pred_wavelets[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
+        # target_wavelets = target_wavelets[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
 
         # Compute the L1 loss for the wavelet coefficients
         l1_wavelet = self.l1_loss(pred_wavelets, target_wavelets)
@@ -450,8 +450,8 @@ class CriterionDFASRSWT(CriterionBase):
         # Post-process the frames
         pred_processed = self.preprocessor.postprocess(pred, extra)
         target_processed = self.preprocessor.postprocess(target, extra)
-        pred = pred[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
-        target = target[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
+        # pred = pred[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
+        # target = target[..., CLIP_SIZE:-CLIP_SIZE, CLIP_SIZE:-CLIP_SIZE]
 
         # Compute the L1 loss for the reconstructed image
         l1_reconstructed = self.l1_loss(pred_processed, target_processed)
