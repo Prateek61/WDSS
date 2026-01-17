@@ -1,5 +1,6 @@
 import torch
 import pywt
+import torch.nn.functional as F
 
 import ptwt
 from ptwt.constants import BoundaryMode, WaveletCoeff2d, WaveletDetailTuple2d
@@ -89,8 +90,9 @@ def swavedec2(
     This implementation follows ptwt's 1D SWT approach extended to 2D.
     """
 
-    if not _is_dtype_supported(data.dtype):
-        raise ValueError(f"Input dtype {data.dtype} not supported")
+    if data.dtype not in (torch.float32, torch.float64, torch.float16):
+        if not _is_dtype_supported(data.dtype):
+            raise ValueError(f"Input dtype {data.dtype} not supported")
 
     if tuple(axes) != (-2, -1):
         if len(axes) != 2:
@@ -180,10 +182,12 @@ def swaverec2(
         coeffs, ds = _waverec2d_fold_channels_2d_list(coeffs)
         res_ll = _check_if_tensor(coeffs[0])
 
-    if not _is_dtype_supported(torch_dtype):
-        raise ValueError(f"Input dtype {torch_dtype} not supported")
+    if torch_dtype not in (torch.float32, torch.float64, torch.float16):
+         if not _is_dtype_supported(torch_dtype):
+            raise ValueError(f"Input dtype {torch_dtype} not supported")
 
     # Get reconstruction filters
+    # Ensure filters are created with the correct dtype
     _, _, rec_lo, rec_hi = _get_filter_tensors(
         wavelet_obj, flip=False, device=torch_device, dtype=torch_dtype
     )
@@ -240,7 +244,7 @@ def _iswt2_level(
     rec_hi: torch.Tensor,
     dilation: int
 ) -> torch.Tensor:
-    """Reconstruct one level of 2D iSWT using separable 1D operations.
+    """Reconstruct one level of 2D iSWT using separable convolutions.
     
     Args:
         ll: Low-low subband (B, H, W)
@@ -256,80 +260,70 @@ def _iswt2_level(
     """
     filt_len = rec_lo.shape[0]
     
-    # For 2D separable iSWT, we need to:
-    # 1. Apply 1D iSWT along rows to get intermediate results
-    # 2. Apply 1D iSWT along cols to get final result
-    
-    # The 1D iSWT formula (for each output position i):
-    # x[i] = (1/filt_len) * sum over k of (rec_lo[k]*cA[i - k*dilation] + rec_hi[k]*cD[i - k*dilation])
-    # with circular indexing
-    
-    # For 2D separable:
-    # First reconstruct columns: L = iswt1d_col(LL, LH), H = iswt1d_col(HL, HH)
-    # Then reconstruct rows: out = iswt1d_row(L, H)
-    
-    # Apply along columns first (dim -2)
-    L_col = _iswt1d(ll, lh, rec_lo, rec_hi, dilation, dim=-2)
-    H_col = _iswt1d(hl, hh, rec_lo, rec_hi, dilation, dim=-2)
-    
-    # Then apply along rows (dim -1)
-    output = _iswt1d(L_col, H_col, rec_lo, rec_hi, dilation, dim=-1)
-    
-    return output
-
-
-def _iswt1d(
-    ca: torch.Tensor,
-    cd: torch.Tensor, 
-    rec_lo: torch.Tensor,
-    rec_hi: torch.Tensor,
-    dilation: int,
-    dim: int
-) -> torch.Tensor:
-    """1D inverse SWT along specified dimension.
-    
-    For each output position i:
-    x[i] = (1/filt_len) * sum_k (rec_lo[k]*cA[i - k*dilation] + rec_hi[k]*cD[i - k*dilation])
-    
-    Args:
-        ca: Approximation coefficients
-        cd: Detail coefficients
-        rec_lo: Low-pass reconstruction filter
-        rec_hi: High-pass reconstruction filter
-        dilation: Filter dilation
-        dim: Dimension to operate on (-1 for rows, -2 for cols)
+    # Ensure 4D for conv2d: (B, C=1, H, W)
+    if ll.dim() == 3:
+        ll = ll.unsqueeze(1)
+        lh = lh.unsqueeze(1)
+        hl = hl.unsqueeze(1)
+        hh = hh.unsqueeze(1)
         
-    Returns:
-        Reconstructed tensor
-    """
-    filt_len = rec_lo.shape[0]
+    # -----------------------------------------------------------
+    # Vertical Pass (Columns)
+    # -----------------------------------------------------------
+    # Compute:
+    # L_col = ConvCol(ll, Lo) + ConvCol(lh, Hi)
+    # H_col = ConvCol(hl, Lo) + ConvCol(hh, Hi)
+    #
+    # We batch this using groups=2.
+    # Input: (B, 4, H, W) -> concatenated [ll, lh, hl, hh]
+    # Groups: 
+    #   Group1: [ll, lh] -> filter [Lo, Hi] -> L_col
+    #   Group2: [hl, hh] -> filter [Lo, Hi] -> H_col
     
-    # Move target dimension to last position for easier processing
-    if dim == -2:
-        ca = ca.transpose(-2, -1)
-        cd = cd.transpose(-2, -1)
+    inp_col = torch.cat([ll, lh, hl, hh], dim=1)
     
-    # Get size along the processing dimension
-    size = ca.shape[-1]
+    # Prepare filters for vertical conv (H, 1)
+    lo_col = rec_lo.view(1, 1, filt_len, 1)
+    hi_col = rec_hi.view(1, 1, filt_len, 1)
     
-    # Initialize output
-    output = torch.zeros_like(ca)
+    # Core filter pair [Lo, Hi] of shape (1, 2, filt_len, 1)
+    filt_pair_col = torch.cat([lo_col, hi_col], dim=1)
     
-    # For each filter coefficient, add shifted contribution
-    for k in range(filt_len):
-        shift = k * dilation
-        # Circular shift: rolling by positive amount shifts values to the right
-        # We want ca[i - k*dilation], so we roll by +shift
-        ca_shifted = torch.roll(ca, shifts=shift, dims=-1)
-        cd_shifted = torch.roll(cd, shifts=shift, dims=-1)
-        
-        output = output + rec_lo[k] * ca_shifted + rec_hi[k] * cd_shifted
+    # Stack for groups=2: (2, 2, filt_len, 1)
+    filters_col = torch.cat([filt_pair_col, filt_pair_col], dim=0)
+    
+    # Circular padding for vertical dimension (top pad)
+    # Operations look back: out[i] depends on in[i - k*d]
+    pad_amt = (filt_len - 1) * dilation
+    inp_padded = F.pad(inp_col, (0, 0, pad_amt, 0), mode='circular')
+    
+    # Convolution
+    res_cols = F.conv2d(inp_padded, filters_col, groups=2, dilation=(dilation, 1))
+    
+    # Normalize
+    res_cols = res_cols / filt_len
+    
+    # res_cols is (B, 2, H, W) containing [L_col, H_col]
+    
+    # -----------------------------------------------------------
+    # Horizontal Pass (Rows)
+    # -----------------------------------------------------------
+    # Compute:
+    # Output = ConvRow(L_col, Lo) + ConvRow(H_col, Hi)
+    #
+    # Input: res_cols (B, 2, H, W)
+    # Filter: [Lo, Hi] of shape (1, 2, 1, filt_len)
+    
+    lo_row = rec_lo.view(1, 1, 1, filt_len)
+    hi_row = rec_hi.view(1, 1, 1, filt_len)
+    filters_row = torch.cat([lo_row, hi_row], dim=1)
+    
+    # Circular padding for horizontal dimension (left pad)
+    inp_row_padded = F.pad(res_cols, (pad_amt, 0, 0, 0), mode='circular')
+    
+    output = F.conv2d(inp_row_padded, filters_row, dilation=(1, dilation))
     
     # Normalize
     output = output / filt_len
     
-    # Restore dimension order
-    if dim == -2:
-        output = output.transpose(-2, -1)
-    
-    return output
+    return output.squeeze(1)

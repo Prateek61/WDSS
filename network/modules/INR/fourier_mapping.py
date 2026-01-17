@@ -24,16 +24,17 @@ class FourierMapping(nn.Module):
         n, _, lr_h, lr_w = lr_feat.shape
         _, _, gb_h, gb_w = gb_feat.shape
         device = lr_feat.device
+        dtype = lr_feat.dtype
 
         # Create a tensor of values upscale_factor of dimension (n, 1, gb_h, gb_w)
-        upscale_factor_tensor = torch.full((n, 1, gb_h, gb_w), upscale_factor, device=device, dtype=torch.float32)
+        upscale_factor_tensor = torch.full((n, 1, gb_h, gb_w), upscale_factor, device=device, dtype=dtype)
         upscale_factor_inv_tensor = 1.0 / upscale_factor_tensor
 
         # Coordinate grids
-        coord_gb = make_coord((gb_h, gb_w), device=device).unsqueeze(0).repeat(n, 1, 1)
+        coord_gb = make_coord((gb_h, gb_w), device=device).to(dtype).unsqueeze(0).repeat(n, 1, 1)
         # No idea how it happens, Black fucking magic
         # All I know is it computes the relative coordinates(distance) between hr_pixels and their nearest lr_pixels
-        lr_feat_coord = make_coord((lr_h, lr_w), device=device, flatten=False) \
+        lr_feat_coord = make_coord((lr_h, lr_w), device=device, flatten=False).to(dtype) \
             .permute(2, 0, 1) \
             .unsqueeze(0).expand(n, 2, lr_h, lr_w)
         q_coord = F.grid_sample(
@@ -46,6 +47,7 @@ class FourierMapping(nn.Module):
         my_rel_coord = rel_coord.permute(0, 2, 1).view(n, 2, gb_h, gb_w)
 
         # Compute the amplitude, frequency, and phase components
+        # Ensure inputs to conv layers match weight dtype (handled by layer call usually, but inputs must match)
         lr_amplitude = self.amplitude_conv.forward(lr_feat)
         hr_freq = self.freq_conv.forward(gb_feat)
         hr_phase = self.phase_conv.forward(upscale_factor_inv_tensor)

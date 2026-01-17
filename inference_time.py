@@ -18,7 +18,7 @@ upscale_factor: float = gt.shape[-2] / lr_frame.shape[-2]
 hr_gbuffer = frame[FrameGroup.GB_INP.value]
 temporal = frame[FrameGroup.TEMPORAL_INP.value]
 
-model = get_model(settings['model_config']).to(device)
+model = get_model(settings['model_config']).to(device).half()
 
 
 # -----------------------------
@@ -166,9 +166,9 @@ def ensure_4d(x):
         return x.unsqueeze(0)
     return x
 
-lr_frame   = ensure_4d(lr_frame)
-hr_gbuffer = ensure_4d(hr_gbuffer)
-temporal   = ensure_4d(temporal)
+lr_frame   = ensure_4d(lr_frame).half()
+hr_gbuffer = ensure_4d(hr_gbuffer).half()
+temporal   = ensure_4d(temporal).half()
 
 # -----------------------------
 # 5) Run warmup + timed runs
