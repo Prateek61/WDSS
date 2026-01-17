@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import pywt
-import torch.nn.functional as F
+import math
 
 import ptwt
 from ptwt.constants import BoundaryMode, WaveletCoeff2d, WaveletDetailTuple2d
@@ -22,8 +22,195 @@ from ptwt.conv_transform_2 import (
     _waverec2d_fold_channels_2d_list
 )
 
-from typing import Union, Optional, Tuple
+from typing import Union, Optional, Tuple, Dict
 
+# Global filter cache to avoid recreating filters on every call
+_FILTER_CACHE: Dict[tuple, torch.Tensor] = {}
+
+# ============================================================================
+# SPECIALIZED WAVELET CONSTANTS AND OPTIMIZED IMPLEMENTATIONS
+# ============================================================================
+
+# Haar wavelet coefficients (filter length 2)
+_HAAR_COEF = 0.7071067811865476  # 1/sqrt(2)
+
+# DB4 wavelet reconstruction filter coefficients (filter length 8)
+_DB4_REC_LO = (0.2303778133088965, 0.7148465705529157, 0.6308807679298589, 
+               -0.027983769416859854, -0.18703481171909309, 0.030841381835560764, 
+               0.0328830116668852, -0.010597401785069032)
+_DB4_REC_HI = (-0.010597401785069032, -0.0328830116668852, 0.030841381835560764, 
+               0.18703481171909309, -0.027983769416859854, -0.6308807679298589, 
+               0.7148465705529157, -0.2303778133088965)
+
+# SYM4 wavelet reconstruction filter coefficients (filter length 8)
+_SYM4_REC_LO = (0.0322231006040427, -0.012603967262037833, -0.09921954357684722,
+                0.29785779560527736, 0.8037387518059161, 0.49761866763201545,
+                -0.02963552764599851, -0.07576571478927333)
+_SYM4_REC_HI = (-0.07576571478927333, 0.02963552764599851, 0.49761866763201545,
+                -0.8037387518059161, 0.29785779560527736, 0.09921954357684722,
+                -0.012603967262037833, -0.0322231006040427)
+
+# Cached stacked reconstruction filters for conv_transpose1d, shape (2, 1, K)
+_HAAR_FILT_CACHE: Dict[Tuple[torch.device, torch.dtype], torch.Tensor] = {}
+_DB4_FILT_CACHE: Dict[Tuple[torch.device, torch.dtype], torch.Tensor] = {}
+_SYM4_FILT_CACHE: Dict[Tuple[torch.device, torch.dtype], torch.Tensor] = {}
+
+
+def _get_haar_rec_filt(device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """Get cached Haar reconstruction filter stack, shape (2, 1, K)."""
+    key = (device, dtype)
+    if key not in _HAAR_FILT_CACHE:
+        c = _HAAR_COEF
+        lo = torch.tensor([[c, c]], device=device, dtype=dtype)  # (1, 2)
+        hi = torch.tensor([[c, -c]], device=device, dtype=dtype)  # (1, 2)
+        _HAAR_FILT_CACHE[key] = torch.stack([lo, hi], dim=0)  # (2, 1, 2)
+    return _HAAR_FILT_CACHE[key]
+
+
+def _get_db4_rec_filt(device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """Get cached DB4 reconstruction filter stack, shape (2, 1, K)."""
+    key = (device, dtype)
+    if key not in _DB4_FILT_CACHE:
+        lo = torch.tensor([_DB4_REC_LO], device=device, dtype=dtype)  # (1, 8)
+        hi = torch.tensor([_DB4_REC_HI], device=device, dtype=dtype)  # (1, 8)
+        _DB4_FILT_CACHE[key] = torch.stack([lo, hi], dim=0)  # (2, 1, 8)
+    return _DB4_FILT_CACHE[key]
+
+
+def _get_sym4_rec_filt(device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    """Get cached SYM4 reconstruction filter stack, shape (2, 1, K)."""
+    key = (device, dtype)
+    if key not in _SYM4_FILT_CACHE:
+        lo = torch.tensor([_SYM4_REC_LO], device=device, dtype=dtype)  # (1, 8)
+        hi = torch.tensor([_SYM4_REC_HI], device=device, dtype=dtype)  # (1, 8)
+        _SYM4_FILT_CACHE[key] = torch.stack([lo, hi], dim=0)  # (2, 1, 8)
+    return _SYM4_FILT_CACHE[key]
+
+
+# ============================================================================
+# FAST CONVOLUTION-BASED iSWT IMPLEMENTATION
+# ============================================================================
+
+def _iswt1d_conv(ca: torch.Tensor, cd: torch.Tensor,
+                 rec_filt: torch.Tensor, filt_len: int, dilation: int = 1) -> torch.Tensor:
+    """Fast 1D inverse SWT using conv_transpose1d with grouped convolution.
+    
+    Uses the algorithm from ptwt: stack approx and detail, apply conv_transpose1d
+    with groups=2, then take mean across groups.
+    
+    Args:
+        ca: Approximation coefficients (N, L)
+        cd: Detail coefficients (N, L)
+        rec_filt: Stacked reconstruction filters, shape (2, 1, K)
+                  rec_filt[0] = rec_lo, rec_filt[1] = rec_hi
+        filt_len: Filter length K
+        dilation: Dilation factor (default 1 for level 1)
+        
+    Returns:
+        Reconstructed signal (N, L)
+    """
+    N, L = ca.shape
+    
+    # Stack approx and detail: (N, 2, L)
+    stacked = torch.stack([ca, cd], dim=1)
+    
+    # Circular padding
+    padl = dilation * (filt_len // 2)
+    padr = dilation * (filt_len // 2 - 1)
+    stacked_pad = F.pad(stacked, (padl, padr), mode='circular')
+    
+    # conv_transpose1d with groups=2: each filter only sees its corresponding input channel
+    # Input: (N, 2, L+pad), Filter: (2, 1, K), groups=2
+    # Output: (N, 2, L)
+    output = F.conv_transpose1d(stacked_pad, rec_filt, dilation=dilation, groups=2, padding=(padl + padr))
+    
+    # Average the two reconstructions
+    return output.mean(dim=1)  # (N, L)
+
+
+def _iswt2_conv(
+    ll: torch.Tensor, 
+    lh: torch.Tensor, 
+    hl: torch.Tensor, 
+    hh: torch.Tensor,
+    rec_filt: torch.Tensor,
+    filt_len: int,
+    dilation: int = 1
+) -> torch.Tensor:
+    """Fast 2D iSWT level using separable 1D conv_transpose.
+    
+    For 2D separable reconstruction:
+    1. Reconstruct columns: L = iswt1d(LL, LH), H = iswt1d(HL, HH)
+    2. Reconstruct rows: out = iswt1d(L, H)
+    
+    Args:
+        ll, lh, hl, hh: Wavelet subbands, shape (B, H, W)
+        rec_filt: Stacked reconstruction filters, shape (2, 1, K)
+        filt_len: Filter length K
+        dilation: Dilation factor for multi-level
+    """
+    B, H, W = ll.shape
+    
+    # ========== COLUMNS (along H dimension) ==========
+    # Reshape: (B, H, W) -> (B*W, H)
+    ll_col = ll.permute(0, 2, 1).reshape(-1, H)
+    lh_col = lh.permute(0, 2, 1).reshape(-1, H)
+    hl_col = hl.permute(0, 2, 1).reshape(-1, H)
+    hh_col = hh.permute(0, 2, 1).reshape(-1, H)
+    
+    L_col = _iswt1d_conv(ll_col, lh_col, rec_filt, filt_len, dilation)
+    H_col = _iswt1d_conv(hl_col, hh_col, rec_filt, filt_len, dilation)
+    
+    # ========== ROWS (along W dimension) ==========
+    # Reshape: (B*W, H) -> (B, W, H) -> (B, H, W) -> (B*H, W)
+    L_row = L_col.view(B, W, H).permute(0, 2, 1).reshape(-1, W)
+    H_row = H_col.view(B, W, H).permute(0, 2, 1).reshape(-1, W)
+    
+    output = _iswt1d_conv(L_row, H_row, rec_filt, filt_len, dilation)
+    
+    return output.view(B, H, W)
+
+
+# ============================================================================
+# WAVELET-SPECIFIC OPTIMIZED 2D iSWT FUNCTIONS
+# ============================================================================
+
+def _iswt2_haar(
+    ll: torch.Tensor, 
+    lh: torch.Tensor, 
+    hl: torch.Tensor, 
+    hh: torch.Tensor
+) -> torch.Tensor:
+    """Fast 2D iSWT for Haar wavelet using conv_transpose approach."""
+    rec_filt = _get_haar_rec_filt(ll.device, ll.dtype)
+    return _iswt2_conv(ll, lh, hl, hh, rec_filt, filt_len=2, dilation=1)
+
+
+def _iswt2_db4(
+    ll: torch.Tensor, 
+    lh: torch.Tensor, 
+    hl: torch.Tensor, 
+    hh: torch.Tensor
+) -> torch.Tensor:
+    """Fast 2D iSWT for DB4 wavelet using conv_transpose approach."""
+    rec_filt = _get_db4_rec_filt(ll.device, ll.dtype)
+    return _iswt2_conv(ll, lh, hl, hh, rec_filt, filt_len=8, dilation=1)
+
+
+def _iswt2_sym4(
+    ll: torch.Tensor, 
+    lh: torch.Tensor, 
+    hl: torch.Tensor, 
+    hh: torch.Tensor
+) -> torch.Tensor:
+    """Fast 2D iSWT for SYM4 wavelet using conv_transpose approach."""
+    rec_filt = _get_sym4_rec_filt(ll.device, ll.dtype)
+    return _iswt2_conv(ll, lh, hl, hh, rec_filt, filt_len=8, dilation=1)
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 def _circular_pad_2d(x: torch.Tensor, pad: Tuple[int, int, int, int]) -> torch.Tensor:
     """Circular pad for 2D (last two dimensions), handles cases where padding > input size.
@@ -156,8 +343,9 @@ def swaverec2(
 ) -> torch.Tensor:
     r"""Run a two-dimensional inverse stationary wavelet transform.
     
-    Efficient, fully differentiable PyTorch implementation using convolutions.
-    Uses the correct iSWT algorithm with conv1d for speed.
+    Fast, fully differentiable PyTorch implementation.
+    Uses convolution-based reconstruction that processes all levels from coarsest to finest.
+    Optimized wavelet-specific implementations for haar, db4, sym4.
     """
 
     if tuple(axes) != (-2, -1):
@@ -170,6 +358,7 @@ def swaverec2(
 
     ds = None
     wavelet_obj = _as_wavelet(wavelet)
+    wavelet_name = wavelet if isinstance(wavelet, str) else wavelet_obj.name
 
     res_ll = _check_if_tensor(coeffs[0])
     torch_device = res_ll.device
@@ -183,12 +372,15 @@ def swaverec2(
          if not _is_dtype_supported(torch_dtype):
             raise ValueError(f"Input dtype {torch_dtype} not supported")
 
-    # Get reconstruction filters
-    # Ensure filters are created with the correct dtype
+    # Get reconstruction filters and stack them for conv_transpose1d
     _, _, rec_lo, rec_hi = _get_filter_tensors(
         wavelet_obj, flip=False, device=torch_device, dtype=torch_dtype
     )
     filt_len = rec_lo.shape[-1]
+    
+    # Stack filters: (2, 1, K) for grouped conv_transpose1d
+    rec_filt = torch.stack([rec_lo.squeeze().unsqueeze(0), 
+                            rec_hi.squeeze().unsqueeze(0)], dim=0)  # (2, 1, K)
     
     num_levels = len(coeffs) - 1
     
@@ -202,17 +394,17 @@ def swaverec2(
     
     output = res_ll
     
-    # Process from coarsest to finest level
+    # Process from coarsest to finest level (level_idx 0 = coarsest)
     for level_idx in range(num_levels):
         detail_tuple = coeffs[1 + level_idx]
         res_lh, res_hl, res_hh = detail_tuple
         
-        step_size = 2 ** (num_levels - 1 - level_idx)
+        # Dilation for this level: coarsest has highest dilation
+        dilation = 2 ** (num_levels - 1 - level_idx)
         
-        output = _iswt2_level_fast(
+        output = _iswt2_conv(
             output, res_lh, res_hl, res_hh,
-            rec_lo.squeeze(), rec_hi.squeeze(),
-            step_size
+            rec_filt, filt_len, dilation
         )
 
     if ds:
@@ -221,150 +413,4 @@ def swaverec2(
     if axes != (-2, -1):
         output = _undo_swap_axes(output, list(axes))
 
-    return output
-
-
-def _idwt1d_conv(ca: torch.Tensor, cd: torch.Tensor, 
-                 rec_lo: torch.Tensor, rec_hi: torch.Tensor) -> torch.Tensor:
-    """Single-level 1D inverse DWT using convolution (fast, differentiable).
-    
-    Args:
-        ca: Approximation coefficients (B, N) or (B, H, N)
-        cd: Detail coefficients (B, N) or (B, H, N)
-        rec_lo: Low-pass reconstruction filter (K,)
-        rec_hi: High-pass reconstruction filter (K,)
-        
-    Returns:
-        Reconstructed signal with doubled last dimension
-    """
-    filt_len = rec_lo.shape[0]
-    input_len = ca.shape[-1]
-    output_len = 2 * input_len
-    
-    # Store original shape for reshaping later
-    orig_shape = ca.shape[:-1]
-    
-    # Flatten to (batch, length) for conv1d
-    ca_flat = ca.reshape(-1, input_len)
-    cd_flat = cd.reshape(-1, input_len)
-    batch_size = ca_flat.shape[0]
-    
-    # Upsample by 2 (insert zeros)
-    ca_up = torch.zeros(batch_size, output_len, dtype=ca.dtype, device=ca.device)
-    cd_up = torch.zeros(batch_size, output_len, dtype=cd.dtype, device=cd.device)
-    ca_up[:, ::2] = ca_flat
-    cd_up[:, ::2] = cd_flat
-    
-    # Add channel dimension for conv1d: (B, 1, L)
-    ca_up = ca_up.unsqueeze(1)
-    cd_up = cd_up.unsqueeze(1)
-    
-    # Circular pad on left with filt_len-1 for periodic boundary convolution
-    # Handle case where padding exceeds signal length by tiling
-    pad_size = filt_len - 1
-    if pad_size >= output_len:
-        # Tile then slice for large padding
-        n_tiles = (pad_size // output_len) + 2
-        ca_up = ca_up.repeat(1, 1, n_tiles)[..., :output_len + pad_size]
-        cd_up = cd_up.repeat(1, 1, n_tiles)[..., :output_len + pad_size]
-        # Shift to get correct circular alignment
-        ca_up = torch.roll(ca_up, -pad_size, dims=-1)[..., :output_len + pad_size]
-        cd_up = torch.roll(cd_up, -pad_size, dims=-1)[..., :output_len + pad_size]
-    else:
-        ca_up = F.pad(ca_up, (pad_size, 0), mode='circular')
-        cd_up = F.pad(cd_up, (pad_size, 0), mode='circular')
-    
-    # Create conv1d filters: flip for convolution
-    rec_lo_filt = rec_lo.flip(0).view(1, 1, -1)
-    rec_hi_filt = rec_hi.flip(0).view(1, 1, -1)
-    
-    # Apply convolution
-    out_lo = F.conv1d(ca_up, rec_lo_filt)
-    out_hi = F.conv1d(cd_up, rec_hi_filt)
-    
-    output = (out_lo + out_hi).squeeze(1)  # (B, output_len)
-    
-    # Apply phase correction: roll by -(filt_len//2 - 1) to match pywt
-    phase_shift = -(filt_len // 2 - 1)
-    output = torch.roll(output, shifts=phase_shift, dims=-1)
-    
-    # Reshape back to original batch structure
-    output = output.reshape(*orig_shape, output_len)
-    
-    return output
-
-
-def _iswt1d_fast(ca: torch.Tensor, cd: torch.Tensor,
-                 rec_lo: torch.Tensor, rec_hi: torch.Tensor,
-                 step_size: int, dim: int = -1) -> torch.Tensor:
-    """Fast 1D inverse SWT using convolution-based idwt.
-    
-    Args:
-        ca: Approximation coefficients
-        cd: Detail coefficients  
-        rec_lo: Low-pass reconstruction filter
-        rec_hi: High-pass reconstruction filter
-        step_size: Step size for this level
-        dim: Dimension to operate on
-        
-    Returns:
-        Reconstructed tensor
-    """
-    # Move target dimension to last position
-    if dim == -2:
-        ca = ca.transpose(-2, -1)
-        cd = cd.transpose(-2, -1)
-    
-    size = ca.shape[-1]
-    output = torch.empty_like(ca)
-    
-    # Process each starting position
-    for first in range(step_size):
-        indices = torch.arange(first, size, step_size, device=ca.device)
-        
-        even_indices = indices[0::2]
-        odd_indices = indices[1::2]
-        
-        if len(even_indices) == 0 or len(odd_indices) == 0:
-            output[..., indices] = ca[..., indices]
-            continue
-        
-        # Extract and reconstruct
-        ca_even = ca[..., even_indices]
-        cd_even = cd[..., even_indices]
-        ca_odd = ca[..., odd_indices]
-        cd_odd = cd[..., odd_indices]
-        
-        x1 = _idwt1d_conv(ca_even, cd_even, rec_lo, rec_hi)
-        x2 = _idwt1d_conv(ca_odd, cd_odd, rec_lo, rec_hi)
-        
-        # Circular shift x2 right by 1 and average
-        x2 = torch.roll(x2, shifts=1, dims=-1)
-        avg = (x1 + x2) * 0.5
-        
-        output[..., indices] = avg
-    
-    if dim == -2:
-        output = output.transpose(-2, -1)
-    
-    return output
-
-
-def _iswt2_level_fast(
-    ll: torch.Tensor, 
-    lh: torch.Tensor, 
-    hl: torch.Tensor, 
-    hh: torch.Tensor,
-    rec_lo: torch.Tensor,
-    rec_hi: torch.Tensor,
-    step_size: int
-) -> torch.Tensor:
-    """Fast 2D iSWT level reconstruction using separable 1D convolutions."""
-    # Apply along columns (dim -2)
-    L_col = _iswt1d_fast(ll, lh, rec_lo, rec_hi, step_size, dim=-2)
-    H_col = _iswt1d_fast(hl, hh, rec_lo, rec_hi, step_size, dim=-2)
-    
-    # Apply along rows (dim -1)
-    output = _iswt1d_fast(L_col, H_col, rec_lo, rec_hi, step_size, dim=-1)
-    
     return output

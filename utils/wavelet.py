@@ -180,27 +180,30 @@ class WaveletProcessor:
                 f"but got {coefficients.shape[0]} channels."
             )
 
-        channels = []
-        for i in range(3):  # R, G, B channels
-            # Extract approximation for this channel
-            approx = coefficients[i].unsqueeze(0).unsqueeze(0)
-            
-            # Build the coefficient structure for reconstruction
-            # Format: [approx, (details_level_L), (details_level_L-1), ..., (details_level_1)]
-            coeffs_list = [approx]
-            
-            for lvl_idx in range(level):
-                base_idx = 3 + lvl_idx * 9
-                hor = coefficients[base_idx + i].unsqueeze(0).unsqueeze(0)
-                ver = coefficients[base_idx + 3 + i].unsqueeze(0).unsqueeze(0)
-                diag = coefficients[base_idx + 6 + i].unsqueeze(0).unsqueeze(0)
-                coeffs_list.append((hor, ver, diag))
+        # Batch all 3 RGB channels together: (3, H, W) -> (1, 3, H, W)
+        # This way swaverec2 can process all channels in one go
+        H, W = coefficients.shape[-2], coefficients.shape[-1]
+        
+        # Extract approx for all 3 channels: (3, H, W)
+        approx = coefficients[:3]  # (3, H, W)
+        
+        # Build coefficient structure with all channels batched
+        # Format: [approx, (details_level_L), (details_level_L-1), ..., (details_level_1)]
+        coeffs_list = [approx]  # (3, H, W) - will be treated as batch of 3
+        
+        for lvl_idx in range(level):
+            base_idx = 3 + lvl_idx * 9
+            # Extract RGB for each detail type
+            hor = torch.stack([coefficients[base_idx + i] for i in range(3)], dim=0)  # (3, H, W)
+            ver = torch.stack([coefficients[base_idx + 3 + i] for i in range(3)], dim=0)
+            diag = torch.stack([coefficients[base_idx + 6 + i] for i in range(3)], dim=0)
+            coeffs_list.append((hor, ver, diag))
 
-            coeffs = tuple(coeffs_list)
-            channel = WaveletProcessor._iwt(coeffs, wavelet)[0, 0]
-            channels.append(channel)
-
-        reconstructed = torch.stack(channels, dim=0)
+        coeffs = tuple(coeffs_list)
+        
+        # _iwt will see this as batch of 3 channels
+        reconstructed = WaveletProcessor._iwt(coeffs, wavelet)  # (3, H, W)
+        
         return reconstructed.float()
 
     @staticmethod
