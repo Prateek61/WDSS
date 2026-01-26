@@ -7,6 +7,12 @@ from .swt import swavedec2, swaverec2
 
 from typing import Optional
 
+# Allow pywt.Wavelet creation in torch.compile without tracing warnings
+@torch.compiler.allow_in_graph
+def _create_wavelet(wavelet: str):
+    """Create a PyWavelets Wavelet object. Wrapped to avoid Dynamo tracing warnings."""
+    return pywt.Wavelet(wavelet)
+
 
 class WaveletProps:
     WAVELET_TRANSFORM_TYPE = 'dwt' # 'dwt', 'swt'
@@ -17,20 +23,22 @@ class WaveletProcessor:
     @staticmethod
     def _wt(image: torch.Tensor, wavelet: str, level: int = 1) -> torch.Tensor:
         # print(f"Wavelet Transform Type: {wavelet}, Level: {level}")
+        wavelet_obj = _create_wavelet(wavelet)
         if WaveletProps.WAVELET_TRANSFORM_TYPE == 'dwt':
-            return ptwt.wavedec2(image, pywt.Wavelet(wavelet), level=level)
+            return ptwt.wavedec2(image, wavelet_obj, level=level)
         elif WaveletProps.WAVELET_TRANSFORM_TYPE == 'swt':
-            return swavedec2(image, pywt.Wavelet(wavelet), level=level)
+            return swavedec2(image, wavelet_obj, level=level)
         else:
             raise ValueError("Unsupported wavelet transform type. Use 'dwt' or 'swt'.")
         
     @staticmethod
     def _iwt(coeffs: torch.Tensor, wavelet: str) -> torch.Tensor:
         # print(f"Inverse Wavelet Transform Type: {wavelet}")
+        wavelet_obj = _create_wavelet(wavelet)
         if WaveletProps.WAVELET_TRANSFORM_TYPE == 'dwt':
-            return ptwt.waverec2(coeffs, pywt.Wavelet(wavelet))
+            return ptwt.waverec2(coeffs, wavelet_obj)
         elif WaveletProps.WAVELET_TRANSFORM_TYPE == 'swt':
-            return swaverec2(coeffs, pywt.Wavelet(wavelet))
+            return swaverec2(coeffs, wavelet_obj)
         else:
             raise ValueError("Unsupported inverse wavelet transform type. Use 'dwt' or 'swt'.")
 

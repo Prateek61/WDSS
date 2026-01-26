@@ -8,7 +8,7 @@ from utils import *
 from typing import Tuple, Dict, Any
 
 class WDSSSWTResBlockGB(ModelBase):
-    def __init__(self):
+    def __init__(self, reparam: bool = False):
         super(WDSSSWTResBlockGB, self).__init__()
 
         self.lr_feat_extractor = LRFrameFeatureExtractor(
@@ -27,11 +27,18 @@ class WDSSSWTResBlockGB(ModelBase):
         #     3,
         #     64
         # )
-        self.hr_gb_feat_extractor = GBFeatureExtractor(
-            48,
-            5,
-            64
-        )
+        if reparam:
+            self.hr_gb_feat_extractor = GBFeatureExtractorReparam(
+                48,
+                5,
+                64
+            )
+        else:
+            self.hr_gb_feat_extractor = GBFeatureExtractor(
+                48,
+                5,
+                64
+            )
         self.feature_fusion = FeatureFusion(
             80,
             48,

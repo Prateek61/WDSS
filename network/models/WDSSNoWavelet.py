@@ -3,7 +3,9 @@ import torch.nn as nn
 
 from .ModelBase import ModelBase
 from ..modules import *
+from ..modules.FeatureExtractors import GBFeatureExtractorReparam, GBFeatureExtractor
 from utils import *
+
 
 from datetime import datetime
 
@@ -12,6 +14,8 @@ from typing import Tuple, Dict, Any
 class WDSSNoWavelet(ModelBase):
     def __init__(
         self,
+        resblock_gb: bool = False,
+        reparam_gb: bool = False
     ):
         super(WDSSNoWavelet, self).__init__()
 
@@ -25,12 +29,26 @@ class WDSSNoWavelet(ModelBase):
             16,
             [32, 32]
         )
-        self.hr_gb_feat_extractor = GBFeatureExtractorDoubleResidual(
-            48,
-            64,
-            3,
-            64
-        )
+        if resblock_gb:
+            if reparam_gb:
+                self.hr_gb_feat_extractor = GBFeatureExtractorReparam(
+                    48,
+                    3,
+                    64
+                )
+            else:
+                self.hr_gb_feat_extractor = GBFeatureExtractor(
+                    48,
+                    3,
+                    64
+                )
+        else:
+            self.hr_gb_feat_extractor = GBFeatureExtractorDoubleResidual(
+                48,
+                64,
+                3,
+                64
+            )
         self.feature_fusion = FeatureFusion(
             80,
             12,

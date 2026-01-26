@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from ..standalone_layers import ResBlock , doubleResidualConv
+from ..standalone_layers import ResBlock , doubleResidualConv, ReparameterizedResBlock
 
 from typing import List, Dict, Any
 
@@ -41,6 +41,27 @@ class GBFeatureExtractor(nn.Module):
     @staticmethod
     def from_config(config: Dict[str, Any]) -> 'GBFeatureExtractor':
         return GBFeatureExtractor(config['in_channels'], config['num_layers'], config['layer_size'] , False) 
+    
+class GBFeatureExtractorReparam(nn.Module):
+    def __init__(self, in_channels: int, num_layers: int = 5, layer_size: int = 64):
+        super(GBFeatureExtractorReparam, self).__init__()
+        netlist = []
+
+        netlist.append(nn.Conv2d(in_channels, layer_size, kernel_size=3, padding=1, stride=1))
+        netlist.append(nn.ReLU())
+
+        for i in range(num_layers - 1):
+            netlist.append(ReparameterizedResBlock(layer_size))
+            netlist.append(nn.ReLU())
+
+        self.net = nn.Sequential(*netlist)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+    
+    @staticmethod
+    def from_config(config: Dict[str, Any]) -> 'GBFeatureExtractorReparam':
+        return GBFeatureExtractorReparam(config['in_channels'], config['num_layers'], config['layer_size'] , False)
     
 class GBFeatureExtractorDoubleResidual(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, num_layers: int = 3, layer_size: int = 64):

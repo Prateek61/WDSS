@@ -33,7 +33,7 @@ from network.image_evaluator import ImageEvaluator
 from network.trainer import Trainer
 from network.models.GetModel import get_model
 from network.models.ModelBase import ModelBase, reparameterize_model
-from utils.wavelet import WaveletProcessor
+from utils.wavelet import WaveletProcessor, WaveletProps
 from network.losses import *
 from network.model_evaluator import *
 from utils.brdf import BRDFProcessor

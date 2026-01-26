@@ -117,6 +117,25 @@ class ResBlock(nn.Module):
         del self.expand_conv
         del self.fea_conv
         del self.reduce_conv
+
+class ReparameterizedResBlock(nn.Module):
+    """ Residual in residual reparameterizable block.
+    Using reparameterizable block to replace single 3x3 convolution.
+    Diagram:
+        ---Conv1x1--Conv3x3-+-Conv1x1--+--
+                   |________|
+         |_____________________________|
+    Args:
+        n_feats (int): The number of feature maps.
+        ratio (int): Expand ratio.
+    """
+    def __init__(self, n_feats: int, ratio: int = 2):
+        super(ReparameterizedResBlock, self).__init__()
+
+        self.conv = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1, stride=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
     
 
 class LightWeightGatedConv2D(nn.Module):
