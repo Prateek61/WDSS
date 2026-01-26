@@ -10,6 +10,7 @@ from config import device
 
 from enum import Enum
 from typing import Dict, Any, Tuple, List
+import torch.nn.functional as F
 
 class ReconstructionFrameType(Enum):
     PRETONEMAP = 'PreTonemap'
@@ -148,9 +149,17 @@ class Preprocessor:
             frame=temporal.unsqueeze(0),
             motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_TYPE.MV_ROUGHNESS_NOV][0:2, :, :].unsqueeze(0)
         )
-        temporal = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
 
-        extra['TEMPORAL_PRETONEMAP'] = warped_temporal.squeeze(0)
+        # Clamp the temporal frame based on upscaled LR neighborhood bounds
+        clamped_temporal = self._temporal_clamp(
+            temporal_frame=warped_temporal,
+            lr_frame=lr.unsqueeze(0),
+            upscale_factor=upscale_factor
+        )
+
+        temporal = torch.cat([clamped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
+
+        extra['TEMPORAL_PRETONEMAP'] = clamped_temporal.squeeze(0)
 
         return gt, lr, temporal, extra
     
@@ -183,7 +192,17 @@ class Preprocessor:
             frame=temporal_irridiance.unsqueeze(0),
             motion_vector=raw_frames[RawFrameGroup.HR_GB][GB_TYPE.MV_ROUGHNESS_NOV][0:2, :, :].unsqueeze(0)
         )
-        temporal_inp = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
+        
+        # Clamp the temporal frame based on upscaled LR neighborhood bounds
+        clamped_temporal = self._temporal_clamp(
+            temporal_frame=warped_temporal,
+            lr_frame=lr_irridiance.unsqueeze(0),
+            upscale_factor=upscale_factor
+        )
+        
+        temporal_inp = torch.cat([clamped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
+
+        # temporal_inp = torch.cat([warped_temporal.squeeze(0), temporal_mask.squeeze(0)], dim=0)
 
         warped_temporal_pretonemap = Mask.warp_frame(
             frame=BRDFProcessor.brdf_remodulate(frame=temporal_irridiance, brdf_map=temporal_brdf).unsqueeze(0),
@@ -225,6 +244,75 @@ class Preprocessor:
             specular=gb[GB_TYPE.NORMAL_SPECULAR][3:4, :, :],
             metallic=gb[GB_TYPE.PRETONEMAP_METALLIC][3:4, :, :]
         )
+    
+    @staticmethod
+    def _temporal_clamp(
+        temporal_frame: torch.Tensor,
+        lr_frame: torch.Tensor,
+        upscale_factor: float,
+        kernel_size: int = 5,
+        tolerance: float = 0.025
+    ) -> torch.Tensor:
+        """Clamp temporal frame values based on neighborhood min/max from upscaled LR.
+        
+        Args:
+            temporal_frame: Warped temporal frame (B, C, H, W) at HR resolution
+            lr_frame: Low resolution frame (B, C, H_lr, W_lr)
+            upscale_factor: Factor to upscale LR to HR resolution
+            kernel_size: Size of the neighborhood kernel for min/max computation
+            tolerance: Allowed deviation from neighborhood min/max bounds
+            
+        Returns:
+            Clamped temporal frame (B, C, H, W)
+        """
+        # Upscale LR frame to HR resolution
+        upscaled_lr = F.interpolate(
+            lr_frame, 
+            scale_factor=upscale_factor, 
+            mode='bilinear', 
+            align_corners=False
+        )
+        
+        # Compute neighborhood min and max using max pooling
+        padding = kernel_size // 2
+        
+        # Neighborhood max
+        neighborhood_max = F.max_pool2d(
+            upscaled_lr, 
+            kernel_size=kernel_size, 
+            stride=1, 
+            padding=padding
+        )
+        
+        # Neighborhood min (using -max(-x) trick)
+        neighborhood_min = -F.max_pool2d(
+            -upscaled_lr, 
+            kernel_size=kernel_size, 
+            stride=1, 
+            padding=padding
+        )
+        
+        # Expand bounds by tolerance to allow some deviation
+        neighborhood_min = neighborhood_min - tolerance
+        neighborhood_max = neighborhood_max + tolerance
+        
+        # Clamp temporal frame to neighborhood bounds
+        clamped_temporal = torch.clamp(temporal_frame, min=neighborhood_min, max=neighborhood_max)
+
+        # Instead of clamping, can we zero out-of-bounds values?
+        # clamped_temporal = temporal_frame.clone()
+        # clamped_temporal = torch.where(
+        #     clamped_temporal < neighborhood_min,
+        #     neighborhood_min,
+        #     clamped_temporal
+        # )
+        # clamped_temporal = torch.where(
+        #     clamped_temporal > neighborhood_max,
+        #     neighborhood_max,
+        #     clamped_temporal
+        # )
+        
+        return clamped_temporal
     
     @staticmethod
     def from_config(config: Dict[str, Any]) -> 'Preprocessor':
