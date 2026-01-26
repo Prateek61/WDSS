@@ -71,7 +71,8 @@ class WDSSSWT(ModelBase):
         # Final wavelet convolution   
         wavelet_out = self.final_wavelet_conv(wavelet_out)
 
+        with torch.amp.autocast("cuda",enabled=False):
+            image_out = WaveletProcessor.batch_iwt(wavelet_out.float()).clamp(min=0.0, max=None)
         # Inverse wavelet transform
-        image_out = WaveletProcessor.batch_iwt(wavelet_out).clamp(min=0.0, max=None)
 
         return wavelet_out, image_out

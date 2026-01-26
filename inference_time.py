@@ -4,21 +4,38 @@ import torch
 
 ITER = 100
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
+torch.set_float32_matmul_precision("high")
+
 settings = initialize_settings("config/config.json")
 train, val, test = WDSSDataset.get_datasets(settings)
 preprocessor = get_preprocessor(settings)
 
+def ensure_4d(x: torch.Tensor) -> torch.Tensor:
+    return x.unsqueeze(0) if x.ndim == 3 else x
+
+def maybe_channels_last(x: torch.Tensor) -> torch.Tensor:
+    return x.contiguous(memory_format=torch.channels_last) if x.ndim == 4 else x
+
 frame = train.get_item(2, upscale_factor=2, no_patch=True)
 frame = WDSSDataset.batch_to_device(frame, device)
-lr_frame = frame[FrameGroup.LR_INP.value]
+
+lr_frame   = ensure_4d(frame[FrameGroup.LR_INP.value]).to(device, non_blocking=True)
+hr_gbuffer = ensure_4d(frame[FrameGroup.GB_INP.value]).to(device, non_blocking=True)
+temporal   = ensure_4d(frame[FrameGroup.TEMPORAL_INP.value]).to(device, non_blocking=True)
+
+# use FP16 for Tensor Cores
+lr_frame   = maybe_channels_last(lr_frame).half()
+hr_gbuffer = maybe_channels_last(hr_gbuffer).half()
+temporal   = maybe_channels_last(temporal).half()
+
 gt = frame[FrameGroup.GT.value]
 extra = frame[FrameGroup.EXTRA.value]
 upscale_factor: float = gt.shape[-2] / lr_frame.shape[-2]
 
-hr_gbuffer = frame[FrameGroup.GB_INP.value]
-temporal = frame[FrameGroup.TEMPORAL_INP.value]
-
-model = get_model(settings['model_config']).to(device).half()
+model = get_model(settings['model_config']).to(device).half().to(memory_format=torch.channels_last).eval()
 
 
 # -----------------------------
@@ -150,9 +167,11 @@ F.pixel_shuffle   = timed_pixel_shuffle
 _orig_batch_iwt = WaveletProcessor.batch_iwt
 
 def timed_batch_iwt(x):
+    assert x.is_cuda, "IWT input is not on CUDA"
     op_timer.start("inverse_wavelet_iwt", x)
     out = _orig_batch_iwt(x)
     op_timer.stop("inverse_wavelet_iwt")
+    assert out.is_cuda, "IWT output moved off CUDA"
     return out
 
 WaveletProcessor.batch_iwt = timed_batch_iwt
@@ -176,13 +195,26 @@ temporal   = ensure_4d(temporal).half()
 warmup = 10
 
 model.eval()
-with torch.no_grad():
+
+
+model.eval()
+dtype = torch.float16
+with torch.inference_mode(), torch.amp.autocast("cuda",dtype=dtype):
     for _ in range(warmup):
         _ = model(lr_frame, hr_gbuffer, temporal, upscale_factor)
+torch.cuda.synchronize()
 
+starter = torch.cuda.Event(enable_timing=True)
+ender = torch.cuda.Event(enable_timing=True)
+
+times_ms = []
+with torch.inference_mode(), torch.amp.autocast("cuda",dtype=dtype):
     for _ in range(ITER):
+        starter.record()
         _ = model(lr_frame, hr_gbuffer, temporal, upscale_factor)
-
+        ender.record()
+        torch.cuda.synchronize()
+        times_ms.append(starter.elapsed_time(ender))
 
 # -----------------------------
 # 6) Summarize results
