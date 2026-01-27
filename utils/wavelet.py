@@ -8,10 +8,12 @@ from .swt import swavedec2, swaverec2
 from typing import Optional
 
 # Allow pywt.Wavelet creation in torch.compile without tracing warnings
-@torch.compiler.allow_in_graph
+# @torch.compiler.allow_in_graph
+torch.compile
 def _create_wavelet(wavelet: str):
     """Create a PyWavelets Wavelet object. Wrapped to avoid Dynamo tracing warnings."""
-    return pywt.Wavelet(wavelet)
+    # return pywt.Wavelet(wavelet)
+    return wavelet
 
 
 class WaveletProps:
@@ -251,6 +253,7 @@ class WaveletProcessor:
         return reconstructed.float()
 
     @staticmethod
+    @torch.compile
     def batch_wt(image_batch, wavelet: Optional[str] = None, level: Optional[int] = None):
         """
         Apply multi-level wavelet transform to a batch of images.
@@ -275,6 +278,7 @@ class WaveletProcessor:
         return torch.stack(coeffs_batch, dim=0)
 
     @staticmethod
+    @torch.compile
     def batch_iwt(coeffs_batch, wavelet: Optional[str] = None, level: Optional[int] = None):
         """
         Reconstruct a batch of images from multi-level wavelet coefficients.
