@@ -491,23 +491,23 @@ if __name__ == "__main__":
 
     WaveletProps.WAVELET_TRANSFORM_TYPE = 'dwt'
 
-    name, model, dtype = "WDSSRegular No Resblock FP16", WDSSRegular.WDSSRegular(), torch.float16
-    avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
-    perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
-    del model
-    torch.cuda.empty_cache()
+    # name, model, dtype = "WDSSRegular No Resblock FP16", WDSSRegular.WDSSRegular(), torch.float16
+    # avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
+    # perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
+    # del model
+    # torch.cuda.empty_cache()
 
-    name, model, dtype = "WDSSRegular Resblock NoReparam FP16", WDSSRegular.WDSSRegular(resblock_gb=True, reparam_gb=False), torch.float16
-    avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
-    perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
-    del model
-    torch.cuda.empty_cache()
+    # name, model, dtype = "WDSSRegular Resblock NoReparam FP16", WDSSRegular.WDSSRegular(resblock_gb=True, reparam_gb=False), torch.float16
+    # avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
+    # perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
+    # del model
+    # torch.cuda.empty_cache()
 
-    name, model, dtype = "WDSSRegular Resblock Reparam FP16", WDSSRegular.WDSSRegular(resblock_gb=True, reparam_gb=True), torch.float16
-    avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
-    perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
-    del model
-    torch.cuda.empty_cache()
+    # name, model, dtype = "WDSSRegular Resblock Reparam FP16", WDSSRegular.WDSSRegular(resblock_gb=True, reparam_gb=True), torch.float16
+    # avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
+    # perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
+    # del model
+    # torch.cuda.empty_cache()
 
     WaveletProps.WAVELET_TRANSFORM_TYPE = 'swt'
 
