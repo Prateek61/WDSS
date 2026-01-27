@@ -145,7 +145,10 @@ def optimize_model_for_inference(model: torch.nn.Module, compile_mode: str = "ma
         return model
 
     try:
-        model = torch.compile(model, mode=compile_mode)
+        if _is_linux:
+            model = torch.compile(model, mode=compile_mode)
+        else:
+            model = torch.compile(model)
         print(f"Model optimized with TorchDynamo using mode: {compile_mode}")
     except Exception as e:
         print(f"Failed to optimize model with TorchDynamo: {e}")
