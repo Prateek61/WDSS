@@ -20,8 +20,8 @@ _is_linux = sys.platform.startswith("linux")
 # ----------------------------------------------------
 # Global Constants
 # ----------------------------------------------------
-WARMUP_ITERS = 20
-EVALUATION_ITERS = 20
+WARMUP_ITERS = 100
+EVALUATION_ITERS = 500
 
 # ----------------------------------------------------
 # Global backend knobs (good defaults)
@@ -444,6 +444,9 @@ if __name__ == "__main__":
 
 
     # 2. Profiling test
+    WaveletProps.WAVELET_TRANSFORM_TYPE = 'swt'
+    WaveletProps.DECOMPOSITION_LEVEL = 1
+
     profile_res_fp16 = run_profile(
         WDSSSWTResBlockGB.WDSSSWTResBlockGB(reparam=True),
         dtype=torch.float16,
