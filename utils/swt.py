@@ -22,57 +22,6 @@ from ptwt.conv_transform_2 import (
 
 from typing import Union, Optional, Tuple
 
-
-def _circular_pad_2d(x: torch.Tensor, pad: Tuple[int, int, int, int]) -> torch.Tensor:
-    """Circular pad for 2D (last two dimensions), handles cases where padding > input size.
-    
-    Args:
-        x: Input tensor of shape (..., H, W)
-        pad: Tuple of (left, right, top, bottom) padding
-        
-    Returns:
-        Padded tensor
-    """
-    # pad order: (left, right, top, bottom)
-    padl, padr, padt, padb = pad
-    h, w = x.shape[-2], x.shape[-1]
-    
-    # For circular padding in PyTorch, we need to use pad with (left, right, top, bottom)
-    # but circular mode requires we handle it properly
-    
-    # If padding is larger than the dimension, we need to tile first
-    need_tile_w = (padl >= w) or (padr >= w)
-    need_tile_h = (padt >= h) or (padb >= h)
-    
-    if need_tile_w or need_tile_h:
-        # Determine how many times we need to tile
-        tile_w = max(1, (max(padl, padr) // w) + 2) if need_tile_w else 1
-        tile_h = max(1, (max(padt, padb) // h) + 2) if need_tile_h else 1
-        
-        # Tile the tensor
-        # x shape: (..., H, W) 
-        ndim = x.dim()
-        repeat_shape = [1] * ndim
-        repeat_shape[-1] = tile_w
-        repeat_shape[-2] = tile_h
-        x_tiled = x.repeat(*repeat_shape)
-        
-        # Calculate new dimensions
-        new_h, new_w = x_tiled.shape[-2], x_tiled.shape[-1]
-        
-        # Calculate start and end indices
-        # We want the center portion plus padding on each side
-        start_h = (tile_h // 2) * h - padt
-        end_h = start_h + h + padt + padb
-        start_w = (tile_w // 2) * w - padl
-        end_w = start_w + w + padl + padr
-        
-        return x_tiled[..., start_h:end_h, start_w:end_w]
-    else:
-        # Standard circular padding - PyTorch handles this
-        # pad format for 2D: (left, right, top, bottom)
-        return torch.nn.functional.pad(x, (padl, padr, padt, padb), mode='circular')
-
 def swavedec2(
     data: torch.Tensor,
     wavelet: Union[ptwt.Wavelet, str],
@@ -81,15 +30,9 @@ def swavedec2(
     level: Optional[int] = None,
     axes: Tuple[int, int] = (-2, -1)
 ) -> ptwt.WaveletCoeff2d:
-    r"""Run a two-dimensional stationary wavelet transform (algorithm à trous).
-    
-    The filter dilation increases at each level: level j uses dilation 2^j.
-    Uses circular padding to minimize border artifacts.
-    
-    This implementation follows ptwt's 1D SWT approach extended to 2D.
+    r"""Run a two-dimentional stationary wavelet transform
     """
 
-    # Removed dtype check to support float16
     # if not _is_dtype_supported(data.dtype):
     #     raise ValueError(f"Input dtype {data.dtype} not supported")
 
@@ -105,28 +48,19 @@ def swavedec2(
         wavelet, flip=True, device=data.device, dtype=data.dtype
     )
     dec_filt = _construct_2d_filt(lo=dec_lo, hi=dec_hi)
-    
-    filt_len = dec_lo.shape[-1]
 
     if level is None:
         level = pywt.dwtn_max_level([data.shape[-1], data.shape[-2]], wavelet)
 
     result_lst: list[WaveletDetailTuple2d] = []
     res_ll = data
-    for current_level in range(level):
-        # À trous algorithm: dilation doubles at each level
-        # Level 0: dilation=1, Level 1: dilation=2, Level 2: dilation=4, etc.
-        dilation = 2 ** current_level
-        
-        # Calculate circular padding - same approach as ptwt's 1D SWT
-        # Using circular padding to minimize border artifacts
-        padl = dilation * (filt_len // 2 - 1)
-        padr = dilation * (filt_len // 2)
-        padt = dilation * (filt_len // 2 - 1)
-        padb = dilation * (filt_len // 2)
-        
-        res_ll = _circular_pad_2d(res_ll, (padl, padr, padt, padb))
-        res = torch.nn.functional.conv2d(res_ll, dec_filt, stride=1, dilation=dilation)
+    for _ in range(level):
+        # res_ll = _fwt_pad2(res_ll, wavelet, mode=mode)
+        res_ll = torch.nn.functional.pad(
+            res_ll, (1, 1, 1, 1), mode=_translate_boundary_strings(mode)
+        )
+        # res = torch.nn.functional.conv2d(res_ll, dec_filt, stride=2)
+        res = torch.nn.functional.conv2d(res_ll, dec_filt, stride=1, dilation=2)
         res_ll, res_lh, res_hl, res_hh = torch.split(res, 1, 1)
         to_append = WaveletDetailTuple2d(
             res_lh.squeeze(1), res_hl.squeeze(1), res_hh.squeeze(1)
@@ -152,13 +86,7 @@ def swaverec2(
     wavelet: Union[ptwt.Wavelet, str],
     axes: Tuple[int, int] = (-2, -1)
 ) -> torch.Tensor:
-    r"""Run a two-dimensional inverse stationary wavelet transform.
-    
-    Fully differentiable PyTorch implementation.
-    
-    For SWT, the inverse is computed by applying synthesis filter contributions
-    at each position and averaging over filter shifts. This is the dual operation
-    to the à trous forward transform.
+    r"""Run a two-dimentional inverse stationary wavelet transform
     """
 
     if tuple(axes) != (-2, -1):
@@ -170,7 +98,7 @@ def swaverec2(
             coeffs = _map_result(coeffs, swap_fn)
 
     ds = None
-    wavelet_obj = _as_wavelet(wavelet)
+    wavelet = _as_wavelet(wavelet)
 
     res_ll = _check_if_tensor(coeffs[0])
     torch_device = res_ll.device
@@ -181,157 +109,50 @@ def swaverec2(
         coeffs, ds = _waverec2d_fold_channels_2d_list(coeffs)
         res_ll = _check_if_tensor(coeffs[0])
 
-    # Removed dtype check to support float16
     # if not _is_dtype_supported(torch_dtype):
     #     raise ValueError(f"Input dtype {torch_dtype} not supported")
 
-    # Get reconstruction filters
     _, _, rec_lo, rec_hi = _get_filter_tensors(
-        wavelet_obj, flip=False, device=torch_device, dtype=torch_dtype
+        wavelet, flip=False, device=torch_device, dtype=torch_dtype
     )
     filt_len = rec_lo.shape[-1]
-    
-    num_levels = len(coeffs) - 1  # Number of detail coefficient tuples
-    
-    # Ensure batch dimension: (B, H, W)
-    if res_ll.dim() == 2:
-        res_ll = res_ll.unsqueeze(0)
-        coeffs = (res_ll,) + tuple(
-            (c[0].unsqueeze(0), c[1].unsqueeze(0), c[2].unsqueeze(0)) 
-            for c in coeffs[1:]
+    rec_filt = _construct_2d_filt(lo=rec_lo, hi=rec_hi)
+
+    for c_pos, coeff_tuple in enumerate(coeffs[1:]):
+        if not isinstance(coeff_tuple, tuple) or len(coeff_tuple) != 3:
+            raise ValueError(
+                f"Unexpected detail coefficient type: {type(coeff_tuple)}. Detail "
+                "coefficients must be a 3-tuple of tensors as returned by "
+                "wavedec2."
+            )
+
+        curr_shape = res_ll.shape
+        for coeff in coeff_tuple:
+            if torch_device != coeff.device:
+                raise ValueError("coefficients must be on the same device")
+            elif torch_dtype != coeff.dtype:
+                raise ValueError("coefficients must have the same dtype")
+            elif coeff.shape != curr_shape:
+                raise ValueError(
+                    "All coefficients on each level must have the same shape"
+                )
+
+        res_lh, res_hl, res_hh = coeff_tuple
+        res_ll = torch.stack([res_ll, res_lh, res_hl, res_hh], 1)
+        res_ll = torch.nn.functional.pad(
+            res_ll, (1, 1, 1, 1), mode="replicate"
         )
-    
-    output = res_ll
-    
-    # Process from coarsest to finest level
-    # coeffs[1] is coarsest detail, coeffs[-1] is finest detail
-    for level_idx in range(num_levels):
-        detail_tuple = coeffs[1 + level_idx]
-        res_lh, res_hl, res_hh = detail_tuple
-        
-        # Dilation for this level: coarsest has highest dilation
-        # level_idx=0 (coarsest) -> dilation = 2^(num_levels-1)
-        # level_idx=num_levels-1 (finest) -> dilation = 2^0 = 1
-        dilation = 2 ** (num_levels - 1 - level_idx)
-        
-        # Reconstruct using separable 1D iSWT
-        # For 2D separable: first do rows, then cols (or vice versa)
-        # Each 1D iSWT combines shifted filter contributions
-        
-        output = _iswt2_level(
-            output, res_lh, res_hl, res_hh,
-            rec_lo.squeeze(), rec_hi.squeeze(),
-            dilation
-        )
+        res_ll = torch.nn.functional.conv_transpose2d(
+            res_ll, rec_filt, stride=1, dilation=2, padding=2
+        ).squeeze(1)
+
+        # res_ll = res_ll[..., 1:-1, 1:-1]
+        # res_ll = res_ll[..., 1:-1, 1:-1]
 
     if ds:
-        output = _unfold_axes(output, list(ds), 2)
+        res_ll = _unfold_axes(res_ll, list(ds), 2)
 
     if axes != (-2, -1):
-        output = _undo_swap_axes(output, list(axes))
+        res_ll = _undo_swap_axes(res_ll, list(axes))
 
-    return output
-
-
-def _iswt2_level(
-    ll: torch.Tensor, 
-    lh: torch.Tensor, 
-    hl: torch.Tensor, 
-    hh: torch.Tensor,
-    rec_lo: torch.Tensor,
-    rec_hi: torch.Tensor,
-    dilation: int
-) -> torch.Tensor:
-    """Reconstruct one level of 2D iSWT using separable 1D operations.
-    
-    Args:
-        ll: Low-low subband (B, H, W)
-        lh: Low-high subband (B, H, W) 
-        hl: High-low subband (B, H, W)
-        hh: High-high subband (B, H, W)
-        rec_lo: 1D low-pass reconstruction filter
-        rec_hi: 1D high-pass reconstruction filter
-        dilation: Filter dilation for this level
-        
-    Returns:
-        Reconstructed tensor (B, H, W)
-    """
-    filt_len = rec_lo.shape[0]
-    
-    # For 2D separable iSWT, we need to:
-    # 1. Apply 1D iSWT along rows to get intermediate results
-    # 2. Apply 1D iSWT along cols to get final result
-    
-    # The 1D iSWT formula (for each output position i):
-    # x[i] = (1/filt_len) * sum over k of (rec_lo[k]*cA[i - k*dilation] + rec_hi[k]*cD[i - k*dilation])
-    # with circular indexing
-    
-    # For 2D separable:
-    # First reconstruct columns: L = iswt1d_col(LL, LH), H = iswt1d_col(HL, HH)
-    # Then reconstruct rows: out = iswt1d_row(L, H)
-    
-    # Apply along columns first (dim -2)
-    L_col = _iswt1d(ll, lh, rec_lo, rec_hi, dilation, dim=-2)
-    H_col = _iswt1d(hl, hh, rec_lo, rec_hi, dilation, dim=-2)
-    
-    # Then apply along rows (dim -1)
-    output = _iswt1d(L_col, H_col, rec_lo, rec_hi, dilation, dim=-1)
-    
-    return output
-
-
-def _iswt1d(
-    ca: torch.Tensor,
-    cd: torch.Tensor, 
-    rec_lo: torch.Tensor,
-    rec_hi: torch.Tensor,
-    dilation: int,
-    dim: int
-) -> torch.Tensor:
-    """1D inverse SWT along specified dimension.
-    
-    For each output position i:
-    x[i] = (1/filt_len) * sum_k (rec_lo[k]*cA[i - k*dilation] + rec_hi[k]*cD[i - k*dilation])
-    
-    Args:
-        ca: Approximation coefficients
-        cd: Detail coefficients
-        rec_lo: Low-pass reconstruction filter
-        rec_hi: High-pass reconstruction filter
-        dilation: Filter dilation
-        dim: Dimension to operate on (-1 for rows, -2 for cols)
-        
-    Returns:
-        Reconstructed tensor
-    """
-    filt_len = rec_lo.shape[0]
-    
-    # Move target dimension to last position for easier processing
-    if dim == -2:
-        ca = ca.transpose(-2, -1)
-        cd = cd.transpose(-2, -1)
-    
-    # Get size along the processing dimension
-    size = ca.shape[-1]
-    
-    # Initialize output
-    output = torch.zeros_like(ca)
-    
-    # For each filter coefficient, add shifted contribution
-    for k in range(filt_len):
-        shift = k * dilation
-        # Circular shift: rolling by positive amount shifts values to the right
-        # We want ca[i - k*dilation], so we roll by +shift
-        ca_shifted = torch.roll(ca, shifts=shift, dims=-1)
-        cd_shifted = torch.roll(cd, shifts=shift, dims=-1)
-        
-        output = output + rec_lo[k] * ca_shifted + rec_hi[k] * cd_shifted
-    
-    # Normalize
-    output = output / filt_len
-    
-    # Restore dimension order
-    if dim == -2:
-        output = output.transpose(-2, -1)
-    
-    return output
+    return res_ll / 4.0
