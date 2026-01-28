@@ -520,7 +520,7 @@ if __name__ == "__main__":
     del model
     torch.cuda.empty_cache()
 
-    name, model, dtype = "WDSSSWT FP16", WDSSSWT.WDSSWT(), torch.float16
+    name, model, dtype = "WDSSSWT FP16", WDSSSWT.WDSSSWT(), torch.float16
     avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
     perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
     del model
@@ -533,13 +533,13 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
 
     WaveletProps.DECOMPOSITION_LEVEL = 2
-    name, model, dtype = "WDSSSWT2L Reparam FP16", WDSSSWT2L.WDSSWT2L(reparam=True), torch.float16
+    name, model, dtype = "WDSSSWT2L Reparam FP16", WDSSSWT2L.WDSSSWT2L(reparam=True), torch.float16
     avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
     perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
     del model
     torch.cuda.empty_cache()
 
-    name, model, dtype = "WDSSSWT2L No Reparam FP16", WDSSSWT2L.WDSSWT2L(reparam=False), torch.float16
+    name, model, dtype = "WDSSSWT2L No Reparam FP16", WDSSSWT2L.WDSSSWT2L(reparam=False), torch.float16
     avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
     perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
     del model
@@ -584,7 +584,7 @@ if __name__ == "__main__":
 
     WaveletProps.WAVELET_TRANSFORM_TYPE = 'swt'
 
-    name, model, dtype = "WDSSSWT FP32", WDSSSWT.WDSSWT(), torch.float32
+    name, model, dtype = "WDSSSWT FP32", WDSSSWT.WDSSSWT(), torch.float32
     avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
     perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
     del model
@@ -603,13 +603,13 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
 
     WaveletProps.DECOMPOSITION_LEVEL = 2
-    name, model, dtype = "WDSSSWT2L Reparam FP32", WDSSSWT2L.WDSSWT2L(reparam=True), torch.float32
+    name, model, dtype = "WDSSSWT2L Reparam FP32", WDSSSWT2L.WDSSSWT2L(reparam=True), torch.float32
     avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
     perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
     del model
     torch.cuda.empty_cache()
 
-    name, model, dtype = "WDSSSWT2L No Reparam FP32", WDSSSWT2L.WDSSWT2L(reparam=False), torch.float32
+    name, model, dtype = "WDSSSWT2L No Reparam FP32", WDSSSWT2L.WDSSSWT2L(reparam=False), torch.float32
     avg, p50, p95 = run_perf(model, dtype=dtype, evaluation_name=name+" (no compile)", compile_mode="none")
     perf_test_res_nocompile.append({"Model": name, "Avg (ms)": avg, "P50 (ms)": p50, "P95 (ms)": p95})
     del model
